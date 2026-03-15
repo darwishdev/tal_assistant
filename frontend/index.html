@@ -44,6 +44,7 @@
         <div id="rec-bar">
             <button id="rec-btn" onclick="toggleRec()" disabled>▶ Start Recording</button>
             <button id="history-toggle" onclick="toggleHistoryMode()" style="display:none">📜 History</button>
+            <button id="infer-btn" onclick="inferNextQuestion()" style="display:none">✨ Infer Next Question</button>
         </div>
 
         <div id="sig-bar">
@@ -58,8 +59,9 @@
             </div>
         </div>
 
-        <div id="save-bar">
-            <button id="save-btn" onclick="saveFiles()">↓ Save to Desktop</button>
+        <div id="chat-bar">
+            <input type="text" id="chat-input" placeholder="Type your message..." />
+            <button id="send-btn" onclick="sendMessage()">➤</button>
         </div>
 
         <div id="err-log"></div>

@@ -12,6 +12,7 @@
         window.runtime.EventsOn('status', (s) => {
             const btn = document.getElementById('rec-btn')
             const historyToggle = document.getElementById('history-toggle')
+            const inferBtn = document.getElementById('infer-btn')
             const app = document.getElementById('app')
             const deviceSelector = document.getElementById('device-selector')
             if (s === 'recording') {
@@ -19,6 +20,7 @@
                 deviceSelector.style.display = 'none'
                 btn.textContent = '■ Stop'; btn.className = 'stop'
                 historyToggle.style.display = 'inline-block'
+                inferBtn.style.display = 'inline-block'
                 recording = true
                 transcriptHistory = []
                 currentPartial = { label: '', text: '' }
@@ -28,6 +30,7 @@
             } else {
                 btn.textContent = '▶ Start'; btn.className = ''
                 historyToggle.style.display = 'none'
+                inferBtn.style.display = 'none'
                 recording = false
                 hidePartial()
                 if (selectedMic && selectedSpeaker) {
@@ -350,6 +353,39 @@
                     document.getElementById('speaker-list').innerHTML = '<div class="error">Error loading devices</div>'
                 })
         }
+
+        // ── Chat Functions ─────────────────────────────────────────────────────────
+        function sendMessage() {
+            const input = document.getElementById('chat-input')
+            const message = input.value.trim()
+            
+            if (!message) return
+            
+            // TODO: Implement message sending logic
+            // For now, just log and clear the input
+            console.log('Sending message:', message)
+            showError(`Message sent: ${message}`)
+            
+            input.value = ''
+        }
+
+        function inferNextQuestion() {
+            // TODO: Implement AI inference logic
+            console.log('Inferring next question...')
+            showError('Inferring next question... (feature coming soon)')
+        }
+
+        // ── Chat Input Enter Key Handler ───────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', () => {
+            const chatInput = document.getElementById('chat-input')
+            if (chatInput) {
+                chatInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        sendMessage()
+                    }
+                })
+            }
+        })
 
         // Load devices on startup
         loadAudioDevices()
