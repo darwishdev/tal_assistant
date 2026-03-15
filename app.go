@@ -153,6 +153,30 @@ func (a *App) SaveFiles(srtContent, signalsContent string) string {
 	return fmt.Sprintf("saved: %s", srtPath)
 }
 
+func (a *App) ListAudioDevices() []string {
+	// PowerShell command to get audio devices
+	psCmd := `Get-PnpDevice -Class AudioEndpoint | Where-Object { $_.Status -eq "OK" -and $_.InstanceId -match "{0\.0\.1" } | Select-Object -ExpandProperty FriendlyName`
+
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd)
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Error listing audio devices: %v", err)
+		return []string{}
+	}
+
+	// Parse output - each line is a device name
+	lines := strings.Split(string(output), "\n")
+	devices := []string{}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			devices = append(devices, trimmed)
+		}
+	}
+
+	return devices
+}
+
 // ── Internal ───────────────────────────────────────────────────────────────
 
 func (a *App) emit(event string, data interface{}) {

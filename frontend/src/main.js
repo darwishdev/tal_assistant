@@ -155,3 +155,15 @@
         }
         function pad(n, l = 2) { return String(n).padStart(l, '0') }
         function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+
+        // ── Test ListAudioDevices ──────────────────────────────────────────────────
+        window.go.main.App.ListAudioDevices()
+            .then(devices => {
+                console.log('Available audio devices:', devices)
+                devices.forEach((device, index) => {
+                    console.log(`  ${index + 1}. ${device}`)
+                })
+            })
+            .catch(err => {
+                console.error('Error listing audio devices:', err)
+            })
