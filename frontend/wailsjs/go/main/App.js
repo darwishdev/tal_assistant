@@ -10,6 +10,10 @@ export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
 
+export function ListAudioDevices() {
+  return window['go']['main']['App']['ListAudioDevices']();
+}
+
 export function Minimize() {
   return window['go']['main']['App']['Minimize']();
 }

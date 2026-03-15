@@ -5,6 +5,8 @@ export function Close():Promise<void>;
 
 export function GetConfig():Promise<Record<string, string>>;
 
+export function ListAudioDevices():Promise<Record<string, Array<string>>>;
+
 export function Minimize():Promise<void>;
 
 export function SaveFiles(arg1:string,arg2:string):Promise<string>;
