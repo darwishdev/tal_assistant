@@ -9,13 +9,14 @@
 </head>
 
 <body style="--wails-draggable:drag">
-    <div id="app">
-        <div id="titlebar" onmousedown="dragStart(event)">
+   <div id="app" class="init">
+
+        <div id="titlebar">
             <div class="t-left">
-                <div id="dot"></div>
-                <span id="t-title">Interview</span>
+                <img src="./src/assets/images/fav.jpeg" alt="Logo" style="width:30px; height:30px; border-radius:4px;">
+                <span id="t-title">Tal Interview Assistant</span>
             </div>
-            <span id="t-status">idle</span>
+            <!-- <span id="t-status">idle</span> -->
             <div class="t-btns">
                 <button class="ico" onclick="window.go.main.App.Minimize()">−</button>
                 <button class="ico x" onclick="window.go.main.App.Close()">×</button>
@@ -23,7 +24,7 @@
         </div>
 
         <div id="rec-bar">
-            <button id="rec-btn" onclick="toggleRec()">▶ Start</button>
+            <button id="rec-btn" onclick="toggleRec()">▶ Start Recording</button>
         </div>
 
         <div id="sig-bar">
@@ -33,7 +34,7 @@
 
         <div id="tx-area">
             <div id="partial" class="line" style="display:none">
-                <span class="lbl mic" id="p-lbl">MIC</span>
+                <span class="lbl mic" id="p-lbl">Mic</span>
                 <span class="tx partial" id="p-tx"></span>
             </div>
         </div>
@@ -45,7 +46,6 @@
         <div id="err-log"></div>
 
     </div>
-
     <script src="/wails/ipc.js"></script>
     <script src="/wails/runtime.js"></script>
     <script src="src/main.js"></script>

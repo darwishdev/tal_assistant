@@ -16,12 +16,14 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:     "Tal Interview Assistant",
-		Width:     700,
-		Height:    980,
-		Frameless: true,
-
-		DisableResize:    false,
+		Title:            "Tal Interview Assistant",
+		Width:            400,
+		Height:           580,
+		MinWidth:         400,
+		MinHeight:        580,
+		MaxWidth:         400,
+		MaxHeight:        580,
+		Frameless:        true,
 		AlwaysOnTop:      true,
 		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
 		Windows: &windows.Options{
