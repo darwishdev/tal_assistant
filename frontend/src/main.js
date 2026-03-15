@@ -2,40 +2,77 @@
         let recording = false
         let srtLines = []
         let sigLines = [`# Signals — ${new Date().toISOString()}`, '']
-
-        const MIC_DEVICE = 'Microphone (Realtek(R) Audio)'
-        const SPEAKER_DEVICE = 'Stereo Mix (Realtek(R) Audio)'
+        let selectedMic = null
+        let selectedSpeaker = null
+        let historyMode = false
+        let transcriptHistory = []
+        let currentPartial = { label: '', text: '' }
 
         // ── Wails event listeners ──────────────────────────────────────────────────
         window.runtime.EventsOn('status', (s) => {
             const btn = document.getElementById('rec-btn')
-            const stat = document.getElementById('t-status')
+            const historyToggle = document.getElementById('history-toggle')
             const app = document.getElementById('app')
+            const deviceSelector = document.getElementById('device-selector')
             if (s === 'recording') {
                 app.classList.remove('init')
+                deviceSelector.style.display = 'none'
                 btn.textContent = '■ Stop'; btn.className = 'stop'
-                stat.textContent = 'recording'; recording = true
+                historyToggle.style.display = 'inline-block'
+                recording = true
+                transcriptHistory = []
+                currentPartial = { label: '', text: '' }
             } else if (s === 'connecting') {
                 app.classList.remove('init')
-                btn.textContent = 'connecting...'; stat.textContent = 'connecting'
+                btn.textContent = 'connecting...'
             } else {
                 btn.textContent = '▶ Start'; btn.className = ''
-                stat.textContent = 'idle'; recording = false
+                historyToggle.style.display = 'none'
+                recording = false
                 hidePartial()
+                if (selectedMic && selectedSpeaker) {
+                    deviceSelector.style.display = 'none'
+                }
             }
         })
 
         window.runtime.EventsOn('transcript', (d) => {
+            console.log(d);
+            
             if (d.isFinal) {
-                hidePartial()
-                addLine(d.label, d.text)
+                // Add to history
+                transcriptHistory.push({ label: d.label, text: d.text })
+                
                 // Build SRT entry
                 srtLines.push(`${srtLines.filter(l => l.match(/^\d+$/)).length + 1}`)
                 srtLines.push(`${msToSRT(d.startMs)} --> ${msToSRT(d.endMs)}`)
                 srtLines.push(`[${d.label}] ${d.text}`)
                 srtLines.push('')
+                
+                // Reset current partial
+                currentPartial = { label: '', text: '' }
+                
+                // Update display based on mode
+                if (historyMode) {
+                    addLineToHistory(d.label, d.text)
+                    hidePartial()
+                } else {
+                    updateLiveDisplay()
+                }
             } else {
-                showPartial(d.label, d.text)
+                // Update current partial
+                // if(currentPartial){
+                //     currentPartial.text = currentPartial.text + ' ' + d.text
+                // }
+                // else{
+                    currentPartial = { label: d.label, text: d.text }
+                // }
+                
+                if (historyMode) {
+                    showPartial(d.label, d.text)
+                } else {
+                    updateLiveDisplay()
+                }
             }
         })
 
@@ -53,9 +90,33 @@
         })
 
         // ── Controls ───────────────────────────────────────────────────────────────
+        function toggleHistoryMode() {
+            historyMode = !historyMode
+            const btn = document.getElementById('history-toggle')
+            const txArea = document.getElementById('tx-area')
+            
+            if (historyMode) {
+                btn.textContent = '🔴 Live'
+                btn.classList.add('active')
+                txArea.classList.add('history-mode')
+                // Rebuild full history
+                rebuildHistoryView()
+            } else {
+                btn.textContent = '📜 History'
+                btn.classList.remove('active')
+                txArea.classList.remove('history-mode')
+                // Switch to live view
+                updateLiveDisplay()
+            }
+        }
+
         function toggleRec() {
             if (!recording) {
-                window.go.main.App.StartRecording(MIC_DEVICE, SPEAKER_DEVICE)
+                if (!selectedMic || !selectedSpeaker) {
+                    showError('Please select both microphone and speaker')
+                    return
+                }
+                window.go.main.App.StartRecording(selectedMic, selectedSpeaker)
                     .then(r => { 
                         if (r !== 'ok') {
                             showError(r)
@@ -67,6 +128,22 @@
                       })
             } else {
                 window.go.main.App.StopRecording()
+            }
+        }
+
+        function onDeviceSelect(type, device) {
+            if (type === 'mic') {
+                selectedMic = device
+            } else if (type === 'speaker') {
+                selectedSpeaker = device
+            }
+            
+            // Enable start button if both devices are selected
+            const btn = document.getElementById('rec-btn')
+            if (selectedMic && selectedSpeaker) {
+                btn.disabled = false
+            } else {
+                btn.disabled = true
             }
         }
 
@@ -91,12 +168,65 @@
         }
 
         // ── UI helpers ─────────────────────────────────────────────────────────────
-        function addLine(label, text) {
+        function updateLiveDisplay() {
+            const area = document.getElementById('tx-area')
+            const partial = document.getElementById('partial')
+            
+            // Clear all lines except partial
+            const lines = area.querySelectorAll('.line:not(#partial)')
+            lines.forEach(line => line.remove())
+            
+            // In live mode: ONLY show current partial, no history, no speaker label
+            if (currentPartial.text) {
+                // Hide speaker label in live mode
+                const lblElement = document.getElementById('p-lbl')
+                lblElement.style.display = 'none'
+                
+                // Show text without speaker label
+                document.getElementById('p-tx').textContent = currentPartial.text
+                partial.style.display = 'flex'
+                partial.classList.add('live-mode-text')
+                area.appendChild(partial)
+            } else {
+                partial.style.display = 'none'
+                partial.classList.remove('live-mode-text')
+            }
+            
+            area.scrollTop = area.scrollHeight
+        }
+
+        function rebuildHistoryView() {
+            const area = document.getElementById('tx-area')
+            const partial = document.getElementById('partial')
+            
+            // Clear all lines except partial
+            const lines = area.querySelectorAll('.line:not(#partial)')
+            lines.forEach(line => line.remove())
+            
+            // Add all history items
+            transcriptHistory.forEach(item => {
+                addLineToHistory(item.label, item.text)
+            })
+            
+            // Show partial if exists (with speaker label in history mode)
+            if (currentPartial.text) {
+                // Re-enable speaker label for history mode
+                const lblElement = document.getElementById('p-lbl')
+                lblElement.style.display = ''
+                partial.classList.remove('live-mode-text')
+                showPartial(currentPartial.label, currentPartial.text)
+            } else {
+                hidePartial()
+            }
+        }
+
+        function addLineToHistory(label, text) {
             const area = document.getElementById('tx-area')
             const div = document.createElement('div')
             div.className = 'line'
             div.innerHTML = `<span class="lbl ${label.toLowerCase()}">${label}</span><span class="tx">${esc(text)}</span>`
-            area.appendChild(div)
+            const partial = document.getElementById('partial')
+            area.insertBefore(div, partial)
             const lines = area.querySelectorAll('.line:not(#partial)')
             if (lines.length > 80) lines[0].remove()
             area.scrollTop = area.scrollHeight
@@ -156,14 +286,70 @@
         function pad(n, l = 2) { return String(n).padStart(l, '0') }
         function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
 
-        // ── Test ListAudioDevices ──────────────────────────────────────────────────
-        window.go.main.App.ListAudioDevices()
-            .then(devices => {
-                console.log('Available audio devices:', devices)
-                devices.forEach((device, index) => {
-                    console.log(`  ${index + 1}. ${device}`)
+        // ── Initialize Audio Devices ───────────────────────────────────────────────
+        function loadAudioDevices() {
+            window.go.main.App.ListAudioDevices()
+                .then(devices => {
+                    console.log('Available audio devices:', devices)
+                    
+                    // Populate microphones
+                    const micList = document.getElementById('mic-list')
+                    micList.innerHTML = ''
+                    if (devices.mics && devices.mics.length > 0) {
+                        devices.mics.forEach((mic, index) => {
+                            const label = document.createElement('label')
+                            label.className = 'device-option'
+                            
+                            const radio = document.createElement('input')
+                            radio.type = 'radio'
+                            radio.name = 'microphone'
+                            radio.value = mic
+                            radio.addEventListener('change', () => onDeviceSelect('mic', mic))
+                            
+                            const span = document.createElement('span')
+                            span.className = 'device-name'
+                            span.textContent = mic
+                            
+                            label.appendChild(radio)
+                            label.appendChild(span)
+                            micList.appendChild(label)
+                        })
+                    } else {
+                        micList.innerHTML = '<div class="no-devices">No microphones found</div>'
+                    }
+                    
+                    // Populate speakers
+                    const speakerList = document.getElementById('speaker-list')
+                    speakerList.innerHTML = ''
+                    if (devices.speakers && devices.speakers.length > 0) {
+                        devices.speakers.forEach((speaker, index) => {
+                            const label = document.createElement('label')
+                            label.className = 'device-option'
+                            
+                            const radio = document.createElement('input')
+                            radio.type = 'radio'
+                            radio.name = 'speaker'
+                            radio.value = speaker
+                            radio.addEventListener('change', () => onDeviceSelect('speaker', speaker))
+                            
+                            const span = document.createElement('span')
+                            span.className = 'device-name'
+                            span.textContent = speaker
+                            
+                            label.appendChild(radio)
+                            label.appendChild(span)
+                            speakerList.appendChild(label)
+                        })
+                    } else {
+                        speakerList.innerHTML = '<div class="no-devices">No speakers found</div>'
+                    }
                 })
-            })
-            .catch(err => {
-                console.error('Error listing audio devices:', err)
-            })
+                .catch(err => {
+                    console.error('Error listing audio devices:', err)
+                    document.getElementById('mic-list').innerHTML = '<div class="error">Error loading devices</div>'
+                    document.getElementById('speaker-list').innerHTML = '<div class="error">Error loading devices</div>'
+                })
+        }
+
+        // Load devices on startup
+        loadAudioDevices()

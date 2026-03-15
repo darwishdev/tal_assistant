@@ -153,10 +153,41 @@ func (a *App) SaveFiles(srtContent, signalsContent string) string {
 	return fmt.Sprintf("saved: %s", srtPath)
 }
 
-func (a *App) ListAudioDevices() []string {
-	// PowerShell command to get audio devices
-	psCmd := `Get-PnpDevice -Class AudioEndpoint | Where-Object { $_.Status -eq "OK" -and $_.InstanceId -match "{0\.0\.1" } | Select-Object -ExpandProperty FriendlyName`
+func (a *App) ListAudioDevices() map[string][]string {
+	// PowerShell command to get speakers (output devices - {0.0.0})
+	speakerCmd := `Get-PnpDevice -Class AudioEndpoint | Where-Object { $_.Status -eq "OK" -and $_.InstanceId -match "{0\.0\.0" } | Select-Object -ExpandProperty FriendlyName`
+	
+	// PowerShell command to get microphones (input devices - {0.0.1})
+	micCmd := `Get-PnpDevice -Class AudioEndpoint | Where-Object { $_.Status -eq "OK" -and $_.InstanceId -match "{0\.0\.1" } | Select-Object -ExpandProperty FriendlyName`
 
+	speakers := getDeviceList(speakerCmd)
+	mics := getDeviceList(micCmd)
+
+	// Move loopback/stereo mix devices from mics to speakers
+	// These are technically recording devices but used for capturing speaker output
+	var actualMics []string
+	for _, mic := range mics {
+		micLower := strings.ToLower(mic)
+		// Check if it's a loopback device (Stereo Mix, What U Hear, Wave, etc.)
+		if strings.Contains(micLower, "stereo mix") ||
+			strings.Contains(micLower, "what u hear") ||
+			strings.Contains(micLower, "wave out mix") ||
+			strings.Contains(micLower, "loopback") {
+			// Move to speakers array
+			speakers = append(speakers, mic)
+		} else {
+			// Keep in mics array
+			actualMics = append(actualMics, mic)
+		}
+	}
+
+	return map[string][]string{
+		"speakers": speakers,
+		"mics":     actualMics,
+	}
+}
+
+func getDeviceList(psCmd string) []string {
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd)
 	output, err := cmd.Output()
 	if err != nil {

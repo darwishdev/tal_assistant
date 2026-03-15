@@ -23,8 +23,27 @@
             </div>
         </div>
 
+        <div id="device-selector" class="device-selector">
+            <h3>Select Audio Devices</h3>
+            
+            <div class="device-section">
+                <h4>🎤 Microphones</h4>
+                <div id="mic-list" class="device-list">
+                    <div class="loading">Loading devices...</div>
+                </div>
+            </div>
+
+            <div class="device-section">
+                <h4>🔊 Speakers</h4>
+                <div id="speaker-list" class="device-list">
+                    <div class="loading">Loading devices...</div>
+                </div>
+            </div>
+        </div>
+
         <div id="rec-bar">
-            <button id="rec-btn" onclick="toggleRec()">▶ Start Recording</button>
+            <button id="rec-btn" onclick="toggleRec()" disabled>▶ Start Recording</button>
+            <button id="history-toggle" onclick="toggleHistoryMode()" style="display:none">📜 History</button>
         </div>
 
         <div id="sig-bar">
