@@ -73,7 +73,12 @@ func (a *App) startup(ctx context.Context) {
 	ffmpegService := ffmpeg.NewFFMPEGService()
 	a.ffmpegService = ffmpegService
 	fmt.Println("geminig", a.geminiKey)
-	a.adkService = adk.NewADKService(a.geminiKey)
+	adkSvc, err := adk.NewADKService("localhost:50051")
+	if err != nil {
+		log.Println("error creating ADK service:", err)
+		return
+	}
+	a.adkService = adkSvc
 	log.Println("App started")
 }
 
@@ -200,7 +205,7 @@ func (a *App) runSpeechStream(audio io.Reader) {
 		if res.IsFinal {
 			go func(speaker, text string, startMs int64) {
 				fmt.Println("text is ", text)
-				sig, err := a.adkService.SendToGemini(speaker, text, startMs)
+				sig, err := a.adkService.ExtractSignalsStream(speaker, text, startMs)
 				if err != nil {
 					a.logAndEmitError(fmt.Sprintf("Gemini: %v", err))
 					return

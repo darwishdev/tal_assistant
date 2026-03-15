@@ -1,151 +1,172 @@
 package adk
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"strings"
+	"sync"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	"tal_assistant/pkg/timeutils"
+
+	pb "github.com/a2aproject/a2a-go/a2apb"
 )
 
-// NOTE: use :generateContent (plain JSON), NOT :streamGenerateContent (SSE)
-const geminiURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-
-const geminiSystemPrompt = `You are a signal detector for a live conversation transcript.
-You receive text from a live conversation (e.g. a job interview) speaker by speaker.
-Your ONLY job is to detect conversation structure and emit these signals:
-  [QUESTION_START] [QUESTION_END] [ANSWER_START] [ANSWER_END]
-Rules:
-- Output ONLY signal tags, nothing else.
-- You may emit multiple signals if needed (e.g. [QUESTION_END][ANSWER_START]).
-- If nothing significant is detected, respond with exactly: NONE
-- Never add any other text.`
-
+// SignalResult now carries the full detected Q or A
 type SignalResult struct {
-	Timestamp string
-	Signal    string
-	SigLine   string
+	Timestamp string // when the segment started
+	Signal    string // "question" or "answer"
+	Text      string // the full detected question or answer text
+	SigLine   string // formatted log line
 }
 
 type ADKServiceInterface interface {
-	SendToGemini(speaker, transcript string, timestampMs int64) (*SignalResult, error)
+	ExtractSignalsStream(speaker, transcript string, timestampMs int64) (*SignalResult, error)
 	Reset()
+	Close() error
 }
 
 type ADKService struct {
-	geminiKey           string
-	conversationHistory []map[string]interface{}
+	conn      *grpc.ClientConn
+	client    pb.A2AServiceClient
+	mu        sync.Mutex
+	contextID string
 }
 
-func NewADKService(geminiKey string) ADKServiceInterface {
-	return &ADKService{geminiKey: geminiKey}
+func NewADKService(addr string) (ADKServiceInterface, error) {
+	conn, err := grpc.NewClient(
+		addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("grpc dial %s: %w", addr, err)
+	}
+	svc := &ADKService{
+		conn:      conn,
+		client:    pb.NewA2AServiceClient(conn),
+		contextID: newContextID(),
+	}
+	log.Printf("[adk] connected to %s", addr)
+	return svc, nil
 }
 
-func (a *ADKService) Reset() {
-	a.conversationHistory = nil
+func (s *ADKService) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.contextID = newContextID()
+	log.Printf("[adk] reset → contextId=%s", s.contextID)
 }
 
-func (a *ADKService) SendToGemini(speaker, transcript string, timestampMs int64) (*SignalResult, error) {
-	if a.geminiKey == "" {
-		return nil, fmt.Errorf("gemini key not set")
-	}
-
-	userMsg := fmt.Sprintf("[%s @ %s]: %s", speaker, timeutils.MsToSRT(timestampMs), transcript)
-	a.conversationHistory = append(a.conversationHistory, map[string]interface{}{
-		"role":  "user",
-		"parts": []map[string]string{{"text": userMsg}},
-	})
-
-	body := map[string]interface{}{
-		"system_instruction": map[string]interface{}{
-			"parts": []map[string]string{{"text": geminiSystemPrompt}},
-		},
-		"contents": a.conversationHistory,
-		"generationConfig": map[string]interface{}{
-			"temperature":     0.1,
-			"maxOutputTokens": 50,
-		},
-	}
-
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("marshal: %w", err)
-	}
-
-	url := fmt.Sprintf("%s?key=%s", geminiURL, a.geminiKey)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http: %w", err)
-	}
-	defer resp.Body.Close()
-
-	rawBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("gemini HTTP %d: %s", resp.StatusCode, string(rawBody))
-	}
-
-	log.Printf("[adk] raw response: %.500s", string(rawBody)) // trim to 500 chars
-
-	// Plain JSON response shape:
-	// {"candidates":[{"content":{"parts":[{"text":"[QUESTION_START]"}]}}]}
-	var parsed struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-	if err := json.Unmarshal(rawBody, &parsed); err != nil {
-		return nil, fmt.Errorf("unmarshal: %w", err)
-	}
-
-	if len(parsed.Candidates) == 0 || len(parsed.Candidates[0].Content.Parts) == 0 {
-		log.Printf("[adk] no candidates in response")
-		return nil, nil
-	}
-
-	raw := strings.TrimSpace(parsed.Candidates[0].Content.Parts[0].Text)
-	signal := strings.TrimSpace(strings.ReplaceAll(raw, "NONE", ""))
-	log.Printf("[adk] signal=%q", signal)
-
-	if signal == "" {
-		return nil, nil
-	}
-
-	a.conversationHistory = append(a.conversationHistory, map[string]interface{}{
-		"role":  "model",
-		"parts": []map[string]string{{"text": signal}},
-	})
-
+func (s *ADKService) ExtractSignalsStream(speaker, transcript string, timestampMs int64) (*SignalResult, error) {
 	ts := timeutils.MsToSRT(timestampMs)
+	payload := fmt.Sprintf("%s|%s|%s", speaker, ts, transcript)
+
+	s.mu.Lock()
+	ctxID := s.contextID
+	s.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req := &pb.SendMessageRequest{
+		Request: &pb.Message{
+			Role:      pb.Role_ROLE_USER,
+			ContextId: ctxID,
+			MessageId: newMessageID(),
+			Parts:     []*pb.Part{{Part: &pb.Part_Text{Text: payload}}},
+		},
+	}
+
+	stream, err := s.client.SendStreamingMessage(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("SendStreamingMessage: %w", err)
+	}
+
+	var raw string
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("stream recv: %w", err)
+		}
+		switch r := resp.Payload.(type) {
+		case *pb.StreamResponse_Msg:
+			raw += partsText(r.Msg)
+		case *pb.StreamResponse_StatusUpdate:
+			if r.StatusUpdate != nil && r.StatusUpdate.Status != nil {
+				if isTerminal(r.StatusUpdate.Status.State) {
+					goto done
+				}
+			}
+		}
+	}
+
+done:
+	raw = strings.TrimSpace(raw)
+	log.Printf("[adk] ctx=%s raw=%q", ctxID, raw)
+
+	if raw == "" {
+		return nil, nil // silent — model still observing
+	}
+
+	// Parse JSON signal from Python
+	var sig struct {
+		Type      string `json:"type"`
+		Text      string `json:"text"`
+		Timestamp string `json:"timestamp"`
+	}
+	if err := json.Unmarshal([]byte(raw), &sig); err != nil {
+		log.Printf("[adk] non-JSON response: %q", raw)
+		return nil, nil
+	}
+
+	if sig.Type == "" || sig.Text == "" {
+		return nil, nil
+	}
+
+	// Use the timestamp from the signal if provided, else fall back to current
+	sigTs := sig.Timestamp
+	if sigTs == "" {
+		sigTs = ts
+	}
+
 	return &SignalResult{
-		Timestamp: ts,
-		Signal:    signal,
-		SigLine:   fmt.Sprintf("[%s] %s", ts, signal),
+		Timestamp: sigTs,
+		Signal:    sig.Type,
+		Text:      sig.Text,
+		SigLine:   fmt.Sprintf("[%s] [%s] %s", sigTs, strings.ToUpper(sig.Type), sig.Text),
 	}, nil
 }
 
-var _ ADKServiceInterface = (*ADKService)(nil)
+func (s *ADKService) Close() error { return s.conn.Close() }
 
-func NewMockADKService() ADKServiceInterface { return &mockADKService{} }
+func isTerminal(state pb.TaskState) bool {
+	return state == pb.TaskState_TASK_STATE_COMPLETED ||
+		state == pb.TaskState_TASK_STATE_FAILED ||
+		state == pb.TaskState_TASK_STATE_CANCELLED ||
+		state == pb.TaskState_TASK_STATE_REJECTED
+}
 
-type mockADKService struct{}
+func partsText(msg *pb.Message) string {
+	if msg == nil {
+		return ""
+	}
+	out := ""
+	for _, part := range msg.Parts {
+		if tp, ok := part.Part.(*pb.Part_Text); ok {
+			out += tp.Text
+		}
+	}
+	return out
+}
 
-func (m *mockADKService) SendToGemini(_, _ string, _ int64) (*SignalResult, error) { return nil, nil }
-func (m *mockADKService) Reset()                                                   {}
+func newContextID() string { return fmt.Sprintf("ctx-%d", timeutils.NowMs()) }
+func newMessageID() string { return fmt.Sprintf("msg-%d", timeutils.NowMs()) }
