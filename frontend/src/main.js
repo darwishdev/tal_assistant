@@ -109,12 +109,14 @@
                 txArea.classList.add('history-mode')
                 // Rebuild full history
                 rebuildHistoryView()
+                checkScrollButton()
             } else {
                 btn.textContent = '📜 History'
                 btn.classList.remove('active')
                 txArea.classList.remove('history-mode')
                 // Switch to live view
                 updateLiveDisplay()
+                checkScrollButton()
             }
         }
 
@@ -180,7 +182,7 @@
             const area = document.getElementById('tx-area')
             const partial = document.getElementById('partial')
             
-            // Clear all lines except partial
+            // Clear all lines except partial and chat messages
             const lines = area.querySelectorAll('.line:not(#partial)')
             lines.forEach(line => line.remove())
             
@@ -194,7 +196,11 @@
                 document.getElementById('p-tx').textContent = currentPartial.text
                 partial.style.display = 'flex'
                 partial.classList.add('live-mode-text')
-                area.appendChild(partial)
+                
+                // Ensure partial is first child
+                if (area.firstChild !== partial) {
+                    area.insertBefore(partial, area.firstChild)
+                }
             } else {
                 partial.style.display = 'none'
                 partial.classList.remove('live-mode-text')
@@ -237,7 +243,8 @@
             area.insertBefore(div, partial)
             const lines = area.querySelectorAll('.line:not(#partial)')
             if (lines.length > 80) lines[0].remove()
-            area.scrollTop = area.scrollHeight
+            // Don't auto-scroll in history mode
+            checkScrollButton()
         }
 
         function showPartial(label, text) {
@@ -247,7 +254,8 @@
             document.getElementById('p-tx').textContent = text
             p.style.display = 'flex'
             document.getElementById('tx-area').appendChild(p)
-            document.getElementById('tx-area').scrollTop = 99999
+            // Don't auto-scroll in history mode
+            checkScrollButton()
         }
 
         function hidePartial() {
@@ -259,15 +267,16 @@
             const noSig = document.getElementById('no-sig')
             if (noSig) noSig.remove()
 
+            // Remove all existing tags to show only the newest one
+            const existingTags = strip.querySelectorAll('.tag')
+            existingTags.forEach(tag => tag.remove())
+
             const tokens = signal.match(/\[[A-Z_]+\]/g) || [signal]
             for (const t of tokens) {
                 const span = document.createElement('span')
                 span.className = 'tag'; span.title = ts; span.textContent = t
                 strip.appendChild(span)
             }
-            // Keep max 6 tags
-            const tags = strip.querySelectorAll('.tag')
-            if (tags.length > 6) for (let i = 0; i < tags.length - 6; i++) tags[i].remove()
         }
 
         function showError(msg) {
@@ -409,7 +418,30 @@
             
             div.innerHTML = `<div class="chat-message-label">${labelText}</div><div>${esc(text)}</div>`
             area.appendChild(div)
+            // Only auto-scroll in live mode, not history mode
+            if (!historyMode) {
+                area.scrollTop = area.scrollHeight
+            }
+        }
+
+        // ── Scroll Functions ───────────────────────────────────────────────────────
+        function scrollToBottom() {
+            const area = document.getElementById('tx-area')
             area.scrollTop = area.scrollHeight
+            checkScrollButton()
+        }
+
+        function checkScrollButton() {
+            const area = document.getElementById('tx-area')
+            const btn = document.getElementById('scroll-to-bottom')
+            
+            // Only show button in history mode and when not at bottom
+            if (historyMode) {
+                const isAtBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 50
+                btn.style.display = isAtBottom ? 'none' : 'flex'
+            } else {
+                btn.style.display = 'none'
+            }
         }
 
         // ── Chat Input Enter Key Handler ───────────────────────────────────────────
@@ -421,6 +453,12 @@
                         sendMessage()
                     }
                 })
+            }
+            
+            // Listen for scroll events to show/hide scroll button
+            const txArea = document.getElementById('tx-area')
+            if (txArea) {
+                txArea.addEventListener('scroll', checkScrollButton)
             }
         })
 
