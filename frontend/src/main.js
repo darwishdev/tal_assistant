@@ -64,6 +64,9 @@
                 }
             } else {
                 // Update current partial
+                if(currentPartial && currentPartial.text == d.text){
+                    return
+                }
                 // if(currentPartial){
                 //     currentPartial.text = currentPartial.text + ' ' + d.text
                 // }
@@ -74,7 +77,9 @@
                 if (historyMode) {
                     showPartial(d.label, d.text)
                 } else {
-                    updateLiveDisplay()
+                    setTimeout(() => {
+                        updateLiveDisplay()
+                    }, 100)
                 }
             }
         })
@@ -361,18 +366,50 @@
             
             if (!message) return
             
-            // TODO: Implement message sending logic
-            // For now, just log and clear the input
+            // Display message in tx-area
+            if (!historyMode) {
+                addChatMessage('user', message)
+            }
+            
+            // TODO: Send to backend
             console.log('Sending message:', message)
-            showError(`Message sent: ${message}`)
             
             input.value = ''
         }
 
         function inferNextQuestion() {
-            // TODO: Implement AI inference logic
-            console.log('Inferring next question...')
-            showError('Inferring next question... (feature coming soon)')
+            // TODO: Get question from backend
+            // For now, display a mock question
+            const mockQuestions = [
+                "Can you explain how you approached solving a complex technical problem in your previous role?",
+                "What would you say is your greatest strength as a software engineer?",
+                "How do you stay updated with the latest technology trends?",
+                "Tell me about a time when you had to work with a difficult team member.",
+                "What interests you most about this position?"
+            ]
+            
+            const randomQuestion = mockQuestions[Math.floor(Math.random() * mockQuestions.length)]
+            
+            if (!historyMode) {
+                addChatMessage('inferred', randomQuestion, '✨ Suggested Question')
+            }
+            
+            console.log('Inferred question:', randomQuestion)
+        }
+
+        function addChatMessage(type, text, label = null) {
+            const area = document.getElementById('tx-area')
+            const div = document.createElement('div')
+            div.className = `chat-message ${type}`
+            
+            let labelText = label
+            if (!labelText) {
+                labelText = type === 'user' ? 'You' : type === 'system' ? 'System' : 'AI'
+            }
+            
+            div.innerHTML = `<div class="chat-message-label">${labelText}</div><div>${esc(text)}</div>`
+            area.appendChild(div)
+            area.scrollTop = area.scrollHeight
         }
 
         // ── Chat Input Enter Key Handler ───────────────────────────────────────────
