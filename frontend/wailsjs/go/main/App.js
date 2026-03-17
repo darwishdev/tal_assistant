@@ -6,8 +6,8 @@ export function Close() {
   return window['go']['main']['App']['Close']();
 }
 
-export function GetConfig() {
-  return window['go']['main']['App']['GetConfig']();
+export function InferNextQuestion(arg1, arg2) {
+  return window['go']['main']['App']['InferNextQuestion'](arg1, arg2);
 }
 
 export function ListAudioDevices() {
@@ -22,8 +22,8 @@ export function SaveFiles(arg1, arg2) {
   return window['go']['main']['App']['SaveFiles'](arg1, arg2);
 }
 
-export function StartRecording(arg1, arg2) {
-  return window['go']['main']['App']['StartRecording'](arg1, arg2);
+export function StartRecording(arg1, arg2, arg3) {
+  return window['go']['main']['App']['StartRecording'](arg1, arg2, arg3);
 }
 
 export function StopRecording() {

@@ -2,20 +2,20 @@ package main
 
 import (
 	"context"
-
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"tal_assistant/config"
 	"tal_assistant/pkg/adk"
 	"tal_assistant/pkg/ffmpeg"
+	redissub "tal_assistant/pkg/redis"
 	"tal_assistant/pkg/stt"
 	"tal_assistant/pkg/timeutils"
-
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -23,21 +23,30 @@ import (
 
 // ── App struct ─────────────────────────────────────────────────────────────
 
+type sigJob struct {
+	speaker string
+	text    string
+	startMs int64
+}
+
 type App struct {
-	ctx                 context.Context
-	ffmpegService       *ffmpeg.FFMPEGService
-	sttService          stt.STTServiceInterface
-	adkService          adk.ADKServiceInterface
-	ffmpegCmd           *exec.Cmd // mic
-	ffmpegCmd2          *exec.Cmd // speaker
-	stopCh              chan struct{}
-	conversationHistory []map[string]interface{}
-	geminiKey           string
-	projectID           string
-	srtLines            []string
-	sigLines            []string
-	srtIndex            int
-	doneChannels        int // counts when both streams finish
+	ctx              context.Context
+	ffmpegService    *ffmpeg.FFMPEGService
+	redisSub         *redissub.RedisSubscriber
+	redisCancel      context.CancelFunc
+	currentVideoPath string
+	sigQueue         chan sigJob
+	sttService       stt.STTServiceInterface
+	adkService       adk.ADKServiceInterface
+	ffmpegCmd        *exec.Cmd
+	ffmpegCmd2       *exec.Cmd
+	stopCh           chan struct{}
+
+	geminiKey string
+	projectID string
+	srtLines  []string
+	sigLines  []string
+	srtIndex  int
 }
 
 func NewApp() *App {
@@ -46,12 +55,12 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-
-	a.geminiKey = os.Getenv("GEMINI_API_KEY")
-	a.projectID = os.Getenv("GOOGLE_PROJECT_ID")
+	cfg := config.Load()
+	a.geminiKey = cfg.GoogleAPIKey
+	a.projectID = cfg.GoogleProjectID
+	fmt.Println("project id is ", a.projectID)
 
 	homeDir, _ := os.UserHomeDir()
-	// Find writable dir for log
 	logDir := filepath.Join(homeDir, "Desktop")
 	if _, err := os.Stat(logDir); os.IsNotExist(err) {
 		logDir = filepath.Join(homeDir, "OneDrive", "Desktop")
@@ -65,37 +74,83 @@ func (a *App) startup(ctx context.Context) {
 		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
 	}
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
 	sttService, err := stt.NewSTTService(a.projectID)
-	if err == nil {
-		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
+	if err != nil {
+		log.Printf("STT service error: %v", err)
 	}
 	a.sttService = sttService
-	ffmpegService := ffmpeg.NewFFMPEGService()
-	a.ffmpegService = ffmpegService
-	fmt.Println("geminig", a.geminiKey)
-	adkSvc, err := adk.NewADKService("localhost:50051")
+
+	a.ffmpegService = ffmpeg.NewFFMPEGService()
+
+	adkService, err := adk.NewADKService(
+		cfg.SignalingAgentURL,
+		cfg.NextQuestionAgentURL,
+	)
 	if err != nil {
-		log.Println("error creating ADK service:", err)
-		return
+		log.Printf("ADK service error: %v", err)
 	}
-	a.adkService = adkSvc
+	a.adkService = adkService
+
+	// ── Redis subscriber — owns all signal + NQI events to the frontend ──
+	a.redisSub = redissub.NewRedisSubscriber(
+		func(e redissub.SignalEvent) {
+			a.emit("signal", map[string]string{
+				"session_id": e.SessionID,
+				"type":       e.Type,
+				"text":       e.Text,
+				"timestamp":  e.Timestamp,
+			})
+		},
+		func(e redissub.NQIEvent) {
+			a.emit("nqi_result", map[string]string{
+				"session_id":    e.SessionID,
+				"next_question": e.NextQuestion,
+				"rationale":     e.Rationale,
+			})
+		},
+	)
+	redisCtx, redisCancel := context.WithCancel(context.Background())
+	a.redisCancel = redisCancel
+	go a.redisSub.Run(redisCtx)
+
 	log.Println("App started")
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	if a.redisCancel != nil {
+		a.redisCancel()
+	}
+	if a.redisSub != nil {
+		a.redisSub.Close()
+	}
 	a.StopRecording()
 }
 
-// ── Wails-bound methods ────────────────────────────────────────────────────
+// ── Signal queue worker ────────────────────────────────────────────────────
+// Processes STT results one at a time — no concurrent calls to the signal
+// detector so the Redis session state is never raced.
 
-func (a *App) GetConfig() map[string]string {
-	return map[string]string{
-		"projectID": a.projectID,
-		"hasGemini": fmt.Sprintf("%v", a.geminiKey != ""),
+func (a *App) processSigQueue() {
+	for job := range a.sigQueue {
+		sig, err := a.adkService.ExtractSignalsStream(job.speaker, job.text, job.startMs)
+		if err != nil {
+			a.logAndEmitError(fmt.Sprintf("signal extraction: %v", err))
+			continue
+		}
+		if sig == nil {
+			continue
+		}
+		// Append to the local signals file log
+		a.sigLines = append(a.sigLines, sig.SigLine)
+		log.Printf("[sig-queue] type=%s text=%q", sig.Signal, sig.Text[:min(60, len(sig.Text))])
+		// Frontend is notified via Redis subscriber — no emit here
 	}
+	log.Println("[sig-queue] worker stopped")
 }
 
-func (a *App) StartRecording(micDevice, speakerDevice string) string {
+// ── Wails-bound methods ────────────────────────────────────────────────────
+func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) string {
 	if a.ffmpegCmd != nil {
 		return "already recording"
 	}
@@ -104,48 +159,93 @@ func (a *App) StartRecording(micDevice, speakerDevice string) string {
 	}
 
 	a.stopCh = make(chan struct{})
-	a.conversationHistory = nil
 	a.srtLines = []string{}
 	a.sigLines = []string{"# Signals — " + time.Now().Format("2006-01-02 15:04:05"), ""}
 	a.srtIndex = 1
 
+	a.sigQueue = make(chan sigJob, 50)
+	go a.processSigQueue()
+
+	// ── Audio pipe for STT ────────────────────────────────────────────────
 	audioPipe, err := a.ffmpegService.Start(micDevice, speakerDevice)
 	if err != nil {
 		return fmt.Sprintf("error audio pipe: %v", err)
 	}
-	go a.runSpeechStream(audioPipe)
+
+	// ── Screen recording (optional) ───────────────────────────────────────
+	outputDir := a.sessionOutputDir()
+
+	var screen *ffmpeg.ScreenSource
+	if screenDevice != "" {
+		// find the matching ScreenSource from the device list
+		screens, err := a.ffmpegService.ScreenDeviceList(a.ctx)
+		if err == nil {
+			for i, s := range screens {
+				if s.ID == screenDevice || s.Name == screenDevice {
+					screen = &screens[i]
+					break
+				}
+			}
+		}
+		// screen == nil here means "full desktop" — StartScreenRecording handles that
+	}
+
+	if screenDevice != "" || screen != nil {
+		videoPath, err := a.ffmpegService.StartScreenRecording(screen, micDevice, speakerDevice, outputDir)
+		if err != nil {
+			log.Printf("screen recording failed to start (non-fatal): %v", err)
+		} else {
+			a.currentVideoPath = videoPath
+			log.Printf("screen recording started → %s", videoPath)
+		}
+	}
+
 	a.adkService.Reset()
+	go a.runSpeechStream(audioPipe)
 	a.emit("status", "recording")
 	return "ok"
 }
 
 func (a *App) StopRecording() {
 	a.ffmpegService.Stop()
+	a.ffmpegService.StopScreenRecording()
+
 	if a.stopCh != nil {
 		select {
 		case <-a.stopCh:
 		default:
 			close(a.stopCh)
 		}
+		a.stopCh = nil
 	}
+
+	if a.sigQueue != nil {
+		close(a.sigQueue)
+		a.sigQueue = nil
+	}
+
 	a.emit("status", "stopped")
 }
-
-func (a *App) Minimize() {
-	runtime.WindowMinimise(a.ctx)
-}
+func (a *App) Minimize() { runtime.WindowMinimise(a.ctx) }
 
 func (a *App) Close() {
 	a.StopRecording()
 	runtime.Quit(a.ctx)
 }
 
-func (a *App) SaveFiles(srtContent, signalsContent string) string {
+// sessionOutputDir returns (and creates) the directory where all session
+// files — srt, signals, video, meta — will be saved.
+func (a *App) sessionOutputDir() string {
 	homeDir, _ := os.UserHomeDir()
+	return homeDir
+}
+func (a *App) SaveFiles(srtContent, signalsContent string) string {
+	outputDir := a.sessionOutputDir()
 	ts := time.Now().Format("2006-01-02_15-04-05")
 
-	srtPath := filepath.Join(homeDir, "transcription_"+ts+".srt")
-	sigPath := filepath.Join(homeDir, "signals_"+ts+".txt")
+	srtPath := filepath.Join(outputDir, "transcription_"+ts+".srt")
+	sigPath := filepath.Join(outputDir, "signals_"+ts+".txt")
+	metaPath := filepath.Join(outputDir, "session_"+ts+".json")
 
 	log.Printf("Saving to: %s", srtPath)
 
@@ -155,62 +255,19 @@ func (a *App) SaveFiles(srtContent, signalsContent string) string {
 	if err := os.WriteFile(sigPath, []byte(signalsContent), 0644); err != nil {
 		return fmt.Sprintf("error writing signals (%s): %v", sigPath, err)
 	}
+
+	meta := map[string]string{
+		"recorded_at": ts,
+		"transcript":  srtPath,
+		"signals":     sigPath,
+		"video":       a.currentVideoPath,
+	}
+	if metaBytes, err := json.MarshalIndent(meta, "", "  "); err == nil {
+		_ = os.WriteFile(metaPath, metaBytes, 0644)
+	}
+
+	a.currentVideoPath = ""
 	return fmt.Sprintf("saved: %s", srtPath)
-}
-
-func (a *App) ListAudioDevices() map[string][]string {
-	// PowerShell command to get speakers (output devices - {0.0.0})
-	speakerCmd := `Get-PnpDevice -Class AudioEndpoint | Where-Object { $_.Status -eq "OK" -and $_.InstanceId -match "{0\.0\.0" } | Select-Object -ExpandProperty FriendlyName`
-	
-	// PowerShell command to get microphones (input devices - {0.0.1})
-	micCmd := `Get-PnpDevice -Class AudioEndpoint | Where-Object { $_.Status -eq "OK" -and $_.InstanceId -match "{0\.0\.1" } | Select-Object -ExpandProperty FriendlyName`
-
-	speakers := getDeviceList(speakerCmd)
-	mics := getDeviceList(micCmd)
-
-	// Move loopback/stereo mix devices from mics to speakers
-	// These are technically recording devices but used for capturing speaker output
-	var actualMics []string
-	for _, mic := range mics {
-		micLower := strings.ToLower(mic)
-		// Check if it's a loopback device (Stereo Mix, What U Hear, Wave, etc.)
-		if strings.Contains(micLower, "stereo mix") ||
-			strings.Contains(micLower, "what u hear") ||
-			strings.Contains(micLower, "wave out mix") ||
-			strings.Contains(micLower, "loopback") {
-			// Move to speakers array
-			speakers = append(speakers, mic)
-		} else {
-			// Keep in mics array
-			actualMics = append(actualMics, mic)
-		}
-	}
-
-	return map[string][]string{
-		"speakers": speakers,
-		"mics":     actualMics,
-	}
-}
-
-func getDeviceList(psCmd string) []string {
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd)
-	output, err := cmd.Output()
-	if err != nil {
-		log.Printf("Error listing audio devices: %v", err)
-		return []string{}
-	}
-
-	// Parse output - each line is a device name
-	lines := strings.Split(string(output), "\n")
-	devices := []string{}
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" {
-			devices = append(devices, trimmed)
-		}
-	}
-
-	return devices
 }
 
 // ── Internal ───────────────────────────────────────────────────────────────
@@ -225,6 +282,7 @@ func (a *App) logAndEmitError(msg string) {
 }
 
 // ── Google Speech ──────────────────────────────────────────────────────────
+
 func (a *App) runSpeechStream(audio io.Reader) {
 	ctx, cancel := context.WithCancel(a.ctx)
 	defer cancel()
@@ -243,10 +301,9 @@ func (a *App) runSpeechStream(audio io.Reader) {
 		return
 	}
 
-	a.emit("status", "recording")
+	// a.emit("status", "recording")
 
 	for res := range results {
-
 		label := res.SpeakerTag
 
 		a.emit("transcript", map[string]interface{}{
@@ -258,23 +315,15 @@ func (a *App) runSpeechStream(audio io.Reader) {
 		})
 
 		if res.IsFinal {
-			go func(speaker, text string, startMs int64) {
-				fmt.Println("text is ", text)
-				sig, err := a.adkService.ExtractSignalsStream(speaker, text, startMs)
-				if err != nil {
-					a.logAndEmitError(fmt.Sprintf("Gemini: %v", err))
-					return
+			// Push to queue — processed sequentially, no race on session state
+			if a.sigQueue != nil {
+				a.sigQueue <- sigJob{
+					speaker: label,
+					text:    res.Text,
+					startMs: res.StartMs,
 				}
-				fmt.Println("signnal is", sig)
-				fmt.Println("err is", err)
-				if sig != nil {
-					a.sigLines = append(a.sigLines, sig.SigLine)
-					a.emit("signal", map[string]string{
-						"timestamp": sig.Timestamp,
-						"signal":    sig.Signal,
-					})
-				}
-			}(label, res.Text, res.StartMs)
+			}
+
 			a.srtLines = append(a.srtLines,
 				fmt.Sprintf("%d", a.srtIndex),
 				fmt.Sprintf("%s --> %s",
@@ -283,21 +332,89 @@ func (a *App) runSpeechStream(audio io.Reader) {
 				fmt.Sprintf("[%s] %s", label, res.Text),
 				"",
 			)
-
 			a.srtIndex++
-
 		}
 	}
 
-	a.emit("status", "stopped")
+	// a.emit("status", "stopped")
 
 	if len(a.srtLines) > 0 {
 		result := a.SaveFiles(
 			strings.Join(a.srtLines, "\n"),
 			strings.Join(a.sigLines, "\n"),
 		)
-
 		log.Println("Auto-save:", result)
 		a.emit("saved", result)
 	}
+}
+
+// ── Audio / screen devices ─────────────────────────────────────────────────
+
+type DeviceSource struct {
+	ID   string
+	Name string
+}
+
+type ListSourcesResonse struct {
+	Mics     []DeviceSource
+	Speakers []DeviceSource
+	Screens  []ffmpeg.ScreenSource
+}
+
+func (a *App) ListAudioDevices() (*ListSourcesResonse, error) {
+	audioDevices, err := a.ffmpegService.AudioDeviceList(a.ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var mics, speakers []DeviceSource
+	for _, dev := range audioDevices {
+		src := DeviceSource{ID: dev.ID, Name: dev.Name}
+		if dev.Type == "mic" {
+			mics = append(mics, src)
+		} else {
+			speakers = append(speakers, src)
+		}
+	}
+
+	screenDevices, err := a.ffmpegService.ScreenDeviceList(a.ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var screens []ffmpeg.ScreenSource
+	for _, screen := range screenDevices {
+		screens = append(screens, ffmpeg.ScreenSource{
+			ID: screen.ID, Name: screen.Name,
+			Screenshot: screen.Screenshot})
+	}
+
+	return &ListSourcesResonse{Mics: mics, Speakers: speakers, Screens: screens}, nil
+}
+
+// ── Next Question (manual trigger from JS) ─────────────────────────────────
+// lastQuestion / lastAnswer removed — the signaling agent maintains its own
+// state in Redis. MANUAL mode sends the user prompt + recent transcript only.
+
+func (a *App) InferNextQuestion(prompt, recentTranscript string) (map[string]string, error) {
+	if strings.TrimSpace(prompt) == "" {
+		// No prompt — nothing useful to send; NQI fires automatically via Redis
+		return nil, nil
+	}
+
+	res, err := a.adkService.InferNextQuestionManual(prompt, recentTranscript)
+	if err != nil || res == nil {
+		return nil, err
+	}
+	return map[string]string{
+		"next_question": res.NextQuestion,
+		"rationale":     res.Rationale,
+	}, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

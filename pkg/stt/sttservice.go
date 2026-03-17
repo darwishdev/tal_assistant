@@ -132,7 +132,7 @@ func (s *STTService) StreamDiarized(ctx context.Context, audio io.Reader) (<-cha
 
 	// Receive recognition responses and forward onto results channel.
 	go func() {
-		defer s.client.Close()
+		// defer s.client.Close()
 		defer close(results)
 
 		for {
@@ -158,7 +158,7 @@ func (s *STTService) StreamDiarized(ctx context.Context, audio io.Reader) (<-cha
 				}
 				alt := result.Alternatives[0]
 				SpeakerTag := "Candidate"
-				if result.ChannelTag == 1 {
+				if result.ChannelTag == 2 {
 					SpeakerTag = "You"
 				}
 				tr := TranscriptResult{

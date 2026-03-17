@@ -17,12 +17,10 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:            "Tal Interview Assistant",
-		Width:            400,
-		Height:           580,
+		Width:            590,
+		Height:           780,
 		MinWidth:         400,
 		MinHeight:        580,
-		MaxWidth:         400,
-		MaxHeight:        580,
 		Frameless:        true,
 		AlwaysOnTop:      true,
 		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
