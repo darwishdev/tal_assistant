@@ -401,6 +401,12 @@ function loadAudioDevices() {
                     screenList.appendChild(label)
                 })
             }
+            
+            // Listen for scroll events to show/hide scroll button
+            const txArea = document.getElementById('tx-area')
+            if (txArea) {
+                txArea.addEventListener('scroll', checkScrollButton)
+            }
         })
         .catch(err => {
             console.error('Error listing audio devices:', err)
