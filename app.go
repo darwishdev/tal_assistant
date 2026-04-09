@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"tal_assistant/config"
-	"tal_assistant/pkg/adk"
+	// "tal_assistant/pkg/adk"
 	"tal_assistant/pkg/ffmpeg"
 	redissub "tal_assistant/pkg/redis"
 	"tal_assistant/pkg/stt"
@@ -37,10 +37,10 @@ type App struct {
 	currentVideoPath string
 	sigQueue         chan sigJob
 	sttService       stt.STTServiceInterface
-	adkService       adk.ADKServiceInterface
-	ffmpegCmd        *exec.Cmd
-	ffmpegCmd2       *exec.Cmd
-	stopCh           chan struct{}
+	// adkService       adk.ADKServiceInterface
+	ffmpegCmd  *exec.Cmd
+	ffmpegCmd2 *exec.Cmd
+	stopCh     chan struct{}
 
 	geminiKey string
 	projectID string
@@ -83,14 +83,14 @@ func (a *App) startup(ctx context.Context) {
 
 	a.ffmpegService = ffmpeg.NewFFMPEGService()
 
-	adkService, err := adk.NewADKService(
-		cfg.SignalingAgentURL,
-		cfg.NextQuestionAgentURL,
-	)
-	if err != nil {
-		log.Printf("ADK service error: %v", err)
-	}
-	a.adkService = adkService
+	// adkService, err := adk.NewADKService(
+	// 	cfg.SignalingAgentURL,
+	// 	cfg.NextQuestionAgentURL,
+	// )
+	// if err != nil {
+	// 	log.Printf("ADK service error: %v", err)
+	// }
+	// a.adkService = adkService
 
 	// ── Redis subscriber — owns all signal + NQI events to the frontend ──
 	a.redisSub = redissub.NewRedisSubscriber(
@@ -131,23 +131,23 @@ func (a *App) shutdown(ctx context.Context) {
 // Processes STT results one at a time — no concurrent calls to the signal
 // detector so the Redis session state is never raced.
 
-func (a *App) processSigQueue() {
-	for job := range a.sigQueue {
-		sig, err := a.adkService.ExtractSignalsStream(job.speaker, job.text, job.startMs)
-		if err != nil {
-			a.logAndEmitError(fmt.Sprintf("signal extraction: %v", err))
-			continue
-		}
-		if sig == nil {
-			continue
-		}
-		// Append to the local signals file log
-		a.sigLines = append(a.sigLines, sig.SigLine)
-		log.Printf("[sig-queue] type=%s text=%q", sig.Signal, sig.Text[:min(60, len(sig.Text))])
-		// Frontend is notified via Redis subscriber — no emit here
-	}
-	log.Println("[sig-queue] worker stopped")
-}
+// func (a *App) processSigQueue() {
+// 	for job := range a.sigQueue {
+// 		sig, err := a.adkService.ExtractSignalsStream(job.speaker, job.text, job.startMs)
+// 		if err != nil {
+// 			a.logAndEmitError(fmt.Sprintf("signal extraction: %v", err))
+// 			continue
+// 		}
+// 		if sig == nil {
+// 			continue
+// 		}
+// 		// Append to the local signals file log
+// 		a.sigLines = append(a.sigLines, sig.SigLine)
+// 		log.Printf("[sig-queue] type=%s text=%q", sig.Signal, sig.Text[:min(60, len(sig.Text))])
+// 		// Frontend is notified via Redis subscriber — no emit here
+// 	}
+// 	log.Println("[sig-queue] worker stopped")
+// }
 
 // ── Wails-bound methods ────────────────────────────────────────────────────
 func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) string {
@@ -164,7 +164,7 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 	a.srtIndex = 1
 
 	a.sigQueue = make(chan sigJob, 50)
-	go a.processSigQueue()
+	// go a.processSigQueue()
 
 	// ── Audio pipe for STT ────────────────────────────────────────────────
 	audioPipe, err := a.ffmpegService.Start(micDevice, speakerDevice)
@@ -200,7 +200,7 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 		}
 	}
 
-	a.adkService.Reset()
+	// a.adkService.Reset()
 	go a.runSpeechStream(audioPipe)
 	a.emit("status", "recording")
 	return "ok"
@@ -396,21 +396,21 @@ func (a *App) ListAudioDevices() (*ListSourcesResonse, error) {
 // lastQuestion / lastAnswer removed — the signaling agent maintains its own
 // state in Redis. MANUAL mode sends the user prompt + recent transcript only.
 
-func (a *App) InferNextQuestion(prompt, recentTranscript string) (map[string]string, error) {
-	if strings.TrimSpace(prompt) == "" {
-		// No prompt — nothing useful to send; NQI fires automatically via Redis
-		return nil, nil
-	}
-
-	res, err := a.adkService.InferNextQuestionManual(prompt, recentTranscript)
-	if err != nil || res == nil {
-		return nil, err
-	}
-	return map[string]string{
-		"next_question": res.NextQuestion,
-		"rationale":     res.Rationale,
-	}, nil
-}
+// func (a *App) InferNextQuestion(prompt, recentTranscript string) (map[string]string, error) {
+// 	if strings.TrimSpace(prompt) == "" {
+// 		// No prompt — nothing useful to send; NQI fires automatically via Redis
+// 		return nil, nil
+// 	}
+//
+// 	res, err := a.adkService.InferNextQuestionManual(prompt, recentTranscript)
+// 	if err != nil || res == nil {
+// 		return nil, err
+// 	}
+// 	return map[string]string{
+// 		"next_question": res.NextQuestion,
+// 		"rationale":     res.Rationale,
+// 	}, nil
+// }
 
 func min(a, b int) int {
 	if a < b {

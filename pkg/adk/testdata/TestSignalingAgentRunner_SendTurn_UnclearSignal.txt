@@ -1,0 +1,24 @@
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_SendTurn_UnclearSignal
+timestamp : 2026-04-09T22:32:13+02:00
+session   : TestSignalingAgentRunner_SendTurn_UnclearSignal_1775766733055
+input     : Candidate: Uh... hmm... I mean...
+output    : UNCLEAR
+UNCLEAR
+
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_SendTurn_UnclearSignal
+timestamp : 2026-04-09T22:36:32+02:00
+session   : TestSignalingAgentRunner_SendTurn_UnclearSignal_1775766992358
+input     : Candidate: Uh... hmm... I mean...
+output    : UNCLEAR
+UNCLEAR
+
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_SendTurn_UnclearSignal
+timestamp : 2026-04-09T22:44:55+02:00
+session   : TestSignalingAgentRunner_SendTurn_UnclearSignal_1775767495312
+input     : Candidate: Uh... hmm... I mean...
+output    : UNCLEAR
+UNCLEAR
+

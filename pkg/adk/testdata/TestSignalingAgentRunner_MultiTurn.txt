@@ -1,0 +1,48 @@
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_MultiTurn
+timestamp : 2026-04-09T22:32:14+02:00
+session   : TestSignalingAgentRunner_MultiTurn_1775766733551
+input     : Recruiter: Can you explain how the Python GIL affects multi-threaded applications?
+output    : Q: Can you explain how the Python GIL affects multi-threaded applications?
+Q: Can you explain how the Python GIL affects multi-threaded applications?
+
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_MultiTurn
+timestamp : 2026-04-09T22:32:14+02:00
+session   : TestSignalingAgentRunner_MultiTurn_1775766733551
+input     : Candidate: The GIL prevents true parallelism in CPython because only one thread holds the interpreter lock at a time. For CPU-bound work I use multiprocessing instead.
+output    : A: The GIL prevents true parallelism in CPython because only one thread holds the interpreter lock at a time. For CPU-bound work I use multiprocessing instead.
+A: The GIL prevents true parallelism in CPython because only one thread holds the interpreter lock at a time. For CPU-bound work I use multiprocessing instead.
+
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_MultiTurn
+timestamp : 2026-04-09T22:36:33+02:00
+session   : TestSignalingAgentRunner_MultiTurn_1775766992811
+input     : Recruiter: Can you explain how the Python GIL affects multi-threaded applications?
+output    : Q: Can you explain how the Python GIL affects multi-threaded applications?
+Q: Can you explain how the Python GIL affects multi-threaded applications?
+
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_MultiTurn
+timestamp : 2026-04-09T22:36:33+02:00
+session   : TestSignalingAgentRunner_MultiTurn_1775766992811
+input     : Candidate: The GIL prevents true parallelism in CPython because only one thread holds the interpreter lock at a time. For CPU-bound work I use multiprocessing instead.
+output    : A: The GIL prevents true parallelism in CPython because only one thread holds the interpreter lock at a time. For CPU-bound work I use multiprocessing instead.
+A: The GIL prevents true parallelism in CPython because only one thread holds the interpreter lock at a time. For CPU-bound work I use multiprocessing instead.
+
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_MultiTurn
+timestamp : 2026-04-09T22:44:56+02:00
+session   : TestSignalingAgentRunner_MultiTurn_1775767495884
+input     : Recruiter: Can you explain how the Python GIL affects multi-threaded applications?
+output    : Q: Can you explain how the Python GIL affects multi-threaded applications?
+Q: Can you explain how the Python GIL affects multi-threaded applications?
+
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_MultiTurn
+timestamp : 2026-04-09T22:44:57+02:00
+session   : TestSignalingAgentRunner_MultiTurn_1775767495884
+input     : Candidate: The GIL prevents true parallelism in CPython because only one thread holds the interpreter lock at a time. For CPU-bound work I use multiprocessing instead.
+output    : A: The GIL prevents true parallelism in CPython because only one thread holds the interpreter lock at a time. For CPU-bound work I use multiprocessing instead.
+A: The GIL prevents true parallelism in CPython because only one thread holds the interpreter lock at a time. For CPU-bound work I use multiprocessing instead.
+
