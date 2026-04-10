@@ -152,3 +152,17 @@ session   : TestSignalingAgentSend_1775845343805
 input     : Candidate: The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, which prevents true parallelism in CPU-bound threads. I'd use multiprocessing for CPU-bound work instead.
 output    : A:The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, which prevents true parallelism in CPU-bound threads. I'd use multiprocessing for CPU-bound work instead.A:The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, which prevents true parallelism in CPU-bound threads. I'd use multiprocessing for CPU-bound work instead.
 
+────────────────────────────────────────
+test      : TestSignalingAgentSend
+timestamp : 2026-04-10T21:08:35+02:00
+session   : TestSignalingAgentSend_1775848113356
+input     : Recruiter: Can you walk me through how the Python GIL works and its impact on multi-threaded code?
+output    : Q:Can you walk me through how the Python GIL works and its impact on multi-threaded code?Q:Can you walk me through how the Python GIL works and its impact on multi-threaded code?
+
+────────────────────────────────────────
+test      : TestSignalingAgentSend
+timestamp : 2026-04-10T21:08:37+02:00
+session   : TestSignalingAgentSend_1775848113356
+input     : Candidate: The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, which prevents true parallelism in CPU-bound threads. I'd use multiprocessing for CPU-bound work instead.
+output    : A:The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, which prevents true parallelism in CPU-bound threads. I'd use multiprocessing for CPU-bound work instead.A:The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, which prevents true parallelism in CPU-bound threads. I'd use multiprocessing for CPU-bound work instead.
+

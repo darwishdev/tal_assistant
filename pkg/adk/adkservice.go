@@ -3,14 +3,15 @@ package adk
 import (
 	"context"
 	"fmt"
-	"google.golang.org/adk/agent/llmagent"
+	"iter"
+	"tal_assistant/pkg/adk/signalingagent"
+	"tal_assistant/pkg/adkutils"
+
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
-	"iter"
-	"strings"
 )
 
 const (
@@ -26,14 +27,8 @@ type ADKServiceInterface interface {
 		userID string,
 		state map[string]any,
 	) error
-	// sginaling agent
-	NewSignalingAgentState(state SignalingAgentState) map[string]any
-	SignalingAgentSend(
-		ctx context.Context,
-		sessionID string,
-		userID string,
-		textPrompt string,
-	) iter.Seq2[string, error]
+	NewSignalingAgentState(req signalingagent.SignalingAgentState) map[string]any
+	SignalingAgentRun(req adkutils.AgentRunRequest) iter.Seq2[string, error]
 }
 
 // ADKService is the concrete implementation of InterviewService.
@@ -45,6 +40,7 @@ type ADKService struct {
 	geminiModel          model.LLM
 	appName              string
 	sessionService       session.Service
+	singalinAgent        *signalingagent.SignalingAgent
 	signalingAgentRunner *runner.Runner
 }
 
@@ -72,22 +68,25 @@ func NewADKService(ctx context.Context, geminiApiKey string) (ADKServiceInterfac
 	}
 
 	sessionService := session.InMemoryService()
-	signalingAgentConfig := NewSignalingAgentConfig(geminiModel)
-	sginalingAgentRunner, err := newAgentRunner(
+	// signaling agent
+	singalinAgent := signalingagent.NewSignalingAgent(&geminiModel)
+	signalingAgentConfig := singalinAgent.NewAgentConfig(geminiModel)
+	sginalingAgentRunner, err := NewAgentRunner(
 		ctx,
 		appName,
 		sessionService,
 		*signalingAgentConfig,
 	)
-	svc := &ADKService{
+
+	return &ADKService{
 		sessionService:       sessionService,
 		geminiLiteModel:      geminiLiteModel,
+		singalinAgent:        singalinAgent,
 		appName:              appName,
 		geminiModel:          geminiModel,
 		geminiProModel:       geminiProModel,
 		signalingAgentRunner: sginalingAgentRunner,
-	}
-	return svc, nil
+	}, nil
 }
 func (s *ADKService) SessionUpsert(
 	ctx context.Context,
@@ -113,39 +112,4 @@ func (s *ADKService) SessionUpsert(
 		return fmt.Errorf("signaling: create session: %w", err)
 	}
 	return nil
-}
-
-func newAgentRunner(
-	ctx context.Context,
-	appName string,
-	sessionService session.Service,
-	agentConfig llmagent.Config,
-) (*runner.Runner, error) {
-	a, err := llmagent.New(agentConfig)
-	if err != nil {
-		return nil, err
-	}
-	r, err := runner.New(runner.Config{
-		AppName:           appName,
-		Agent:             a,
-		SessionService:    sessionService,
-		AutoCreateSession: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return r, nil
-}
-func (s *ADKService) extractText(ev *session.Event) string {
-	if ev == nil || ev.LLMResponse.Content == nil {
-		return ""
-	}
-	var sb strings.Builder
-	for _, part := range ev.LLMResponse.Content.Parts {
-		if part != nil && part.Text != "" {
-			sb.WriteString(part.Text)
-		}
-	}
-	return sb.String()
 }

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"tal_assistant/pkg/adk/signalingagent"
+	"tal_assistant/pkg/adkutils"
 	"testing"
 	"time"
 )
@@ -17,7 +19,7 @@ import (
 
 var (
 	testUserName     = "test_user"
-	testQuestionBank = SignalingAgentState{
+	testQuestionBank = signalingagent.SignalingAgentState{
 		QuestionBank: []string{
 			"Explain the Python GIL and its impact on multi-threaded programs.",
 			"Design a real-time leaderboard for a multiplayer game.",
@@ -117,7 +119,13 @@ func TestSignalingAgentSend(t *testing.T) {
 		"Candidate: The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, which prevents true parallelism in CPU-bound threads. I'd use multiprocessing for CPU-bound work instead.",
 	}
 	for _, input := range inputs {
-		signalChunks := svc.SignalingAgentSend(ctx, id, testUserName, input)
+		req := adkutils.AgentRunRequest{
+			Ctx:       ctx,
+			SessionID: id,
+			UserID:    testUserName,
+			Prompt:    input,
+		}
+		signalChunks := svc.SignalingAgentRun(req)
 		output, err := BuildSignalString(t, signalChunks)
 		if err != nil {
 			t.Logf("error proccessing signal :%s : %s", input, err.Error())
