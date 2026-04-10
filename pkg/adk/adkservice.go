@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"tal_assistant/pkg/adk/signalingagent"
+	"tal_assistant/pkg/adk/signalingagentmapper"
 	"tal_assistant/pkg/adkutils"
 
 	"google.golang.org/adk/model"
@@ -29,19 +30,23 @@ type ADKServiceInterface interface {
 	) error
 	NewSignalingAgentState(req signalingagent.SignalingAgentState) map[string]any
 	SignalingAgentRun(req adkutils.AgentRunRequest) iter.Seq2[string, error]
+	NewSignalingAgentMapperState(req signalingagentmapper.SignalingAgentMapperState) map[string]any
+	SignalingAgentMapperRun(req adkutils.AgentRunRequest) (string, error)
 }
 
 // ADKService is the concrete implementation of InterviewService.
 // Construct it with NewADKService; use it only through the InterviewService
 // interface in the rest of the application.
 type ADKService struct {
-	geminiLiteModel      model.LLM
-	geminiProModel       model.LLM
-	geminiModel          model.LLM
-	appName              string
-	sessionService       session.Service
-	singalinAgent        *signalingagent.SignalingAgent
-	signalingAgentRunner *runner.Runner
+	geminiLiteModel             model.LLM
+	geminiProModel              model.LLM
+	geminiModel                 model.LLM
+	appName                     string
+	sessionService              session.Service
+	singalinAgent               *signalingagent.SignalingAgent
+	signalingAgentRunner        *runner.Runner
+	signalingAgentMapper        *signalingagentmapper.SignalingAgentMapper
+	signalingAgentMapperRunner  *runner.Runner
 }
 
 // NewADKService builds the service and wires up all agents.
@@ -77,15 +82,33 @@ func NewADKService(ctx context.Context, geminiApiKey string) (ADKServiceInterfac
 		sessionService,
 		*signalingAgentConfig,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating runner for signaling agent: %w", err)
+	}
+
+	// signaling agent mapper
+	signalingMapper := signalingagentmapper.NewSignalingAgentMapper(&geminiLiteModel)
+	signalingMapperConfig := signalingMapper.NewAgentConfig(geminiLiteModel)
+	signalingMapperRunner, err := NewAgentRunner(
+		ctx,
+		appName,
+		sessionService,
+		*signalingMapperConfig,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating runner for signaling agent mapper: %w", err)
+	}
 
 	return &ADKService{
-		sessionService:       sessionService,
-		geminiLiteModel:      geminiLiteModel,
-		singalinAgent:        singalinAgent,
-		appName:              appName,
-		geminiModel:          geminiModel,
-		geminiProModel:       geminiProModel,
-		signalingAgentRunner: sginalingAgentRunner,
+		sessionService:            sessionService,
+		geminiLiteModel:           geminiLiteModel,
+		singalinAgent:             singalinAgent,
+		appName:                   appName,
+		geminiModel:               geminiModel,
+		geminiProModel:            geminiProModel,
+		signalingAgentRunner:      sginalingAgentRunner,
+		signalingAgentMapper:      signalingMapper,
+		signalingAgentMapperRunner: signalingMapperRunner,
 	}, nil
 }
 func (s *ADKService) SessionUpsert(
