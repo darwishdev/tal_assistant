@@ -22,3 +22,11 @@ input     : Candidate: Uh... hmm... I mean...
 output    : UNCLEAR
 UNCLEAR
 
+────────────────────────────────────────
+test      : TestSignalingAgentRunner_SendTurn_UnclearSignal
+timestamp : 2026-04-10T15:26:55+02:00
+session   : TestSignalingAgentRunner_SendTurn_UnclearSignal_1775827614575
+input     : Candidate: Uh... hmm... I mean...
+output    : UNCLEAR
+UNCLEAR
+
