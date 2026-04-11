@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Wails Dev (full app)",
+      "runtimeExecutable": "wails",
+      "runtimeArgs": ["dev"],
+      "port": 34115
+    },
+    {
+      "name": "Vite Frontend Only",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
+      "port": 5173
+    }
+  ]
+}

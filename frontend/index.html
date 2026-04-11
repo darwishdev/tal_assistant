@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="src/app.css">
 </head>
 <body style="--wails-draggable:drag">
-    <div id="app" class="init">
+    <div id="app">
         <div id="titlebar">
             <div class="t-left">
                 <img src="./src/assets/images/fav.jpeg" alt="Logo" style="width:30px; height:30px; border-radius:4px;">
@@ -19,61 +19,7 @@
             </div>
         </div>
 
-        <div id="device-selector" class="device-selector">
-            <h3>Select Audio Devices</h3>
-            <div class="device-section">
-                <h4>🎤 Microphones</h4>
-                <div id="mic-list" class="device-list">
-                    <div class="loading">Loading devices...</div>
-                </div>
-            </div>
-            <div class="device-section">
-                <h4>🔊 Speakers</h4>
-                <div id="speaker-list" class="device-list">
-                    <div class="loading">Loading devices...</div>
-                </div>
-            </div>
-            <div class="device-section">
-                <h4>🖥 Screen <span class="device-section-hint">optional — leave blank to record full desktop</span></h4>
-                <div id="screen-list" class="device-list">
-                    <div class="loading">Loading screens...</div>
-                </div>
-            </div>
-        </div>
-
-        <div id="rec-bar">
-            <button id="rec-btn" onclick="toggleRec()" disabled>▶ Start Recording</button>
-            <button id="screen-btn" onclick="toggleRec()">Analyze Screen</button>
-            <button id="history-toggle" onclick="toggleHistoryMode()" style="display:none">📜 History</button>
-            <button id="infer-btn" onclick="inferNextQuestion()" style="display:none">✦ Next Q</button>
-        </div>
-
-        <!-- Signals bar — tags only, hover reveals timestamp + text -->
-        <div id="sig-bar">
-            <span class="sig-lbl">signals</span>
-                <span id="rec-timer" style="display:none"></span>
-        </div>
-
-        <!-- Transcript -->
-        <div id="tx-area">
-            <div id="partial" class="line" style="display:none">
-                <span class="lbl mic" id="p-lbl">Mic</span>
-                <span class="tx partial" id="p-tx"></span>
-            </div>
-            <button id="scroll-to-bottom" onclick="scrollToBottom()" style="display:none" title="Scroll to bottom">↓</button>
-        </div>
-
-        <!-- NQI chat -->
-        <div id="nqi-chat">
-            <div id="nqi-messages"></div>
-        </div>
-
-        <div id="chat-bar">
-            <input type="text" id="chat-input" placeholder="Guide next question… (or leave blank for auto)" />
-            <button id="send-btn" onclick="inferNextQuestion()">➤</button>
-        </div>
-
-        <div id="err-log"></div>
+        <div id="router-view"></div>
     </div>
     <script src="/wails/ipc.js"></script>
     <script src="/wails/runtime.js"></script>

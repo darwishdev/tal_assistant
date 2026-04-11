@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -136,9 +135,7 @@ func (f *FFMPEGService) StartScreenRecording(
 	)
 
 	cmd := exec.Command("ffmpeg", args...)
-	cmd.Stderr = os.Stderr
-
-	log.Printf("[screen-rec] ffmpeg command: ffmpeg %s", strings.Join(args, " "))
+	cmd.Stderr = nil
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -206,11 +203,13 @@ Where-Object {
 } |
 Select-Object FriendlyName, InstanceId
 `
-
+	fmt.Printf("getting adudio defices \n")
 	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", ps)
 
 	out, err := cmd.Output()
+
 	if err != nil {
+		fmt.Printf("errrrrrr : %v \n", err)
 		return nil, err
 	}
 
@@ -246,6 +245,7 @@ Select-Object FriendlyName, InstanceId
 			Type: devType,
 		})
 	}
+	fmt.Printf("getting adudio sources %s \n", sources)
 
 	return sources, nil
 }

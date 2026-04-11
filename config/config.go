@@ -2,8 +2,6 @@ package config
 
 import (
 	"log"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/viper"
 )
@@ -20,6 +18,8 @@ type Config struct {
 	SignalingAgentURL    string `mapstructure:"SIGNALING_AGENT_URL"`
 	NextQuestionAgentURL string `mapstructure:"NEXT_QUESTION_AGENT_URL"`
 
+	ATSBaseURL string `mapstructure:"ATS_BASE_URL"`
+
 	RedisAddress string
 }
 
@@ -28,38 +28,12 @@ var AppConfig Config
 func Load() *Config {
 
 	viper.SetConfigType("env")
-	viper.AutomaticEnv()
+	viper.SetConfigFile("./config/app.env")
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("cannot determine home directory: %v", err)
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatalf("failed reading config ./config/app.env: %v", err)
 	}
-
-	paths := []string{
-		"./config/app.env",
-		filepath.Join(homeDir, ".config", "tal_assistant", "app.env"),
-	}
-
-	var loadedPath string
-
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			viper.SetConfigFile(p)
-
-			if err := viper.ReadInConfig(); err != nil {
-				log.Fatalf("failed reading config %s: %v", p, err)
-			}
-
-			loadedPath = p
-			break
-		}
-	}
-
-	if loadedPath == "" {
-		log.Println("No app.env file found, relying only on environment variables")
-	} else {
-		log.Println("Loaded config from:", loadedPath)
-	}
+	log.Println("Loaded config from: ./config/app.env")
 
 	if err := viper.Unmarshal(&AppConfig); err != nil {
 		log.Fatalf("Unable to decode config: %v", err)

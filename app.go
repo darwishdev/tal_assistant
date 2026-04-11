@@ -14,6 +14,7 @@ import (
 	"tal_assistant/config"
 	"tal_assistant/pkg/adk"
 	"tal_assistant/pkg/adkutils"
+	"tal_assistant/pkg/atsclient"
 	"tal_assistant/pkg/ffmpeg"
 	redispkg "tal_assistant/pkg/redis"
 	"tal_assistant/pkg/stt"
@@ -51,6 +52,8 @@ type App struct {
 	interviewID string
 	userID      string
 
+	atsClient atsclient.ATSClientInterface
+
 	geminiKey string
 	projectID string
 	srtLines  []string
@@ -65,6 +68,7 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	cfg := config.Load()
+	fmt.Printf("api key is %s", cfg.GoogleAPIKey)
 	a.geminiKey = cfg.GoogleAPIKey
 	a.projectID = cfg.GoogleProjectID
 	fmt.Println("project id is ", a.projectID)
@@ -97,6 +101,12 @@ func (a *App) startup(ctx context.Context) {
 		log.Printf("NewADKService: %v", err)
 	}
 	a.adkService = adkService
+
+	atsClient, err := atsclient.NewATSClient(cfg.ATSBaseURL)
+	if err != nil {
+		log.Printf("ATSClient init error: %v", err)
+	}
+	a.atsClient = atsClient
 
 	publisher := redispkg.NewRedisPublisher()
 	a.redisPublisher = publisher
@@ -132,21 +142,38 @@ func (a *App) StartSession(userID string, questionBank []adkutils.QuestionBankQu
 	a.userID = userID
 	a.interviewID = fmt.Sprintf("%s_%d", userID, time.Now().UnixMilli())
 
+	log.Printf("[session] initialising ADK sessions — user=%q interview=%s questions=%d",
+		userID, a.interviewID, len(questionBank))
+
 	sessions, err := a.adkService.StartSession(a.ctx, userID, questionBank)
 	if err != nil {
+		log.Printf("[session] ERROR: ADK StartSession failed: %v", err)
 		return fmt.Sprintf("error starting ADK session: %v", err)
 	}
 	a.sessions = &sessions
 
-	if err := a.redisCache.SaveQuestionBank(a.ctx, a.interviewID, questionBank); err != nil {
-		log.Printf("SaveQuestionBank: %v", err)
-	}
-	if err := a.redisCache.InitInterviewSummary(a.ctx, a.interviewID, questionBank); err != nil {
-		log.Printf("InitInterviewSummary: %v", err)
+	log.Printf("[session] ADK sessions created — signaling=%s mapper=%s nqi=%s nqe=%s",
+		sessions.SignalingAgentSessionID,
+		sessions.SignalingAgentMapperSessionID,
+		sessions.NextQuestionIndicatorSessionID,
+		sessions.NextQuestionExtenderSessionID,
+	)
+
+	if len(questionBank) > 0 {
+		if err := a.redisCache.SaveQuestionBank(a.ctx, a.interviewID, questionBank); err != nil {
+			log.Printf("[session] WARNING: SaveQuestionBank: %v", err)
+		} else {
+			log.Printf("[session] question bank saved to Redis — interview=%s questions=%d", a.interviewID, len(questionBank))
+		}
+	} else {
+		log.Printf("[session] WARNING: no question bank provided — mapper will not be able to match signals")
 	}
 
-	log.Printf("Session started: interview=%s user=%s signaling=%s",
-		a.interviewID, userID, sessions.SignalingAgentSessionID)
+	if err := a.redisCache.InitInterviewSummary(a.ctx, a.interviewID, questionBank); err != nil {
+		log.Printf("[session] WARNING: InitInterviewSummary: %v", err)
+	}
+
+	log.Printf("[session] ready — interview=%s user=%s", a.interviewID, userID)
 	return "ok"
 }
 
@@ -155,14 +182,18 @@ func (a *App) StartSession(userID string, questionBank []adkutils.QuestionBankQu
 // detector so the Redis session state is never raced.
 
 func (a *App) processSigQueue() {
+	log.Printf("[sig-queue] worker started — interview=%s", a.interviewID)
 	var qandaBuf strings.Builder
+
 	for job := range a.sigQueue {
 		if a.sessions == nil {
-			a.logAndEmitError("processSigQueue: no active session — call StartSession first")
+			a.logAndEmitError("no active session — call StartSession before recording")
 			continue
 		}
 
-		// Stream the signaling agent and emit each chunk to the UI.
+		log.Printf("[sig-queue] processing utterance speaker=%q len=%d", job.speaker, len(job.text))
+
+		// ── Stream signaling agent ────────────────────────────────────────
 		var sigBuf strings.Builder
 		for chunk, err := range a.adkService.SignalingAgentRun(adkutils.AgentRunRequest{
 			Ctx:       a.ctx,
@@ -171,7 +202,7 @@ func (a *App) processSigQueue() {
 			Prompt:    job.speaker + ": " + job.text,
 		}) {
 			if err != nil {
-				a.logAndEmitError(fmt.Sprintf("signal extraction: %v", err))
+				a.logAndEmitError(fmt.Sprintf("signaling agent error: %v", err))
 				break
 			}
 			a.emit("signal_chunk_detected", chunk)
@@ -179,21 +210,38 @@ func (a *App) processSigQueue() {
 		}
 
 		signal := strings.TrimSpace(sigBuf.String())
-		log.Printf("[sig-queue] speaker=%s signal=%q", job.speaker, signal)
 
-		if signal == "" || signal == "UNCLEAR" {
+		// ── Deduplication ─────────────────────────────────────────────────
+		// The ADK SDK yields incremental chunks then emits the complete text
+		// as a final event, causing signal = "content" + "content".
+		// Detect exact doubling and strip the duplicate half.
+		if n := len(signal); n > 0 && n%2 == 0 {
+			if signal[:n/2] == signal[n/2:] {
+				signal = signal[:n/2]
+				log.Printf("[sig-queue] dedup: stripped duplicate — final len=%d", len(signal))
+			}
+		}
+
+		// ── Classify & guard ──────────────────────────────────────────────
+		switch {
+		case signal == "" || signal == "UNCLEAR":
+			log.Printf("[sig-queue] speaker=%q → UNCLEAR, skipping", job.speaker)
+			continue
+		case strings.HasPrefix(signal, "Q:"):
+			log.Printf("[sig-queue] speaker=%q → QUESTION: %q", job.speaker, signal[2:])
+			qandaBuf.Reset()
+		case strings.HasPrefix(signal, "A:"):
+			log.Printf("[sig-queue] speaker=%q → ANSWER: %q", job.speaker, signal[2:])
+		default:
+			log.Printf("[sig-queue] speaker=%q → UNRECOGNISED signal=%q, skipping", job.speaker, signal)
 			continue
 		}
 
-		// Accumulate Q&A context: reset buffer on a new question signal.
-		if strings.HasPrefix(signal, "Q:") {
-			qandaBuf.Reset()
-		}
 		qandaBuf.WriteString(signal)
 		qandaBuf.WriteString("\n")
 
-		// Publish to the orchestration pipeline via Redis.
-		if err := a.redisPublisher.PublishSignalDetected(a.ctx, redispkg.SignalDetectedEvent{
+		// ── Publish to orchestration pipeline ─────────────────────────────
+		event := redispkg.SignalDetectedEvent{
 			InterviewID:        a.interviewID,
 			UserID:             a.userID,
 			TranscriptLine:     job.text,
@@ -203,21 +251,35 @@ func (a *App) processSigQueue() {
 			MapperSessionID:    a.sessions.SignalingAgentMapperSessionID,
 			IndicatorSessionID: a.sessions.NextQuestionIndicatorSessionID,
 			ExtenderSessionID:  a.sessions.NextQuestionExtenderSessionID,
-		}); err != nil {
-			a.logAndEmitError(fmt.Sprintf("publish signal detected: %v", err))
+		}
+		if err := a.redisPublisher.PublishSignalDetected(a.ctx, event); err != nil {
+			a.logAndEmitError(fmt.Sprintf("publish signal_detected: %v", err))
+		} else {
+			log.Printf("[sig-queue] → published signal_detected interview=%s signal=%q",
+				a.interviewID, signal[:min(40, len(signal))])
 		}
 	}
-	log.Println("[sig-queue] worker stopped")
+
+	log.Printf("[sig-queue] worker stopped — interview=%s", a.interviewID)
 }
 
 // ── Wails-bound methods ────────────────────────────────────────────────────
 func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) string {
 	if a.ffmpegCmd != nil {
+		log.Println("[recording] already recording — ignoring StartRecording call")
 		return "already recording"
 	}
 	if a.projectID == "" {
+		log.Println("[recording] ERROR: GOOGLE_PROJECT_ID not set")
 		return "error: GOOGLE_PROJECT_ID not set"
 	}
+	if a.sessions == nil {
+		log.Println("[recording] ERROR: no active session — call ATSBeginSession before StartRecording")
+		return "error: no active session — call ATSBeginSession first"
+	}
+
+	log.Printf("[recording] starting — interview=%s mic=%q speaker=%q screen=%q",
+		a.interviewID, micDevice, speakerDevice, screenDevice)
 
 	a.stopCh = make(chan struct{})
 	a.srtLines = []string{}
@@ -230,8 +292,10 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 	// ── Audio pipe for STT ────────────────────────────────────────────────
 	audioPipe, err := a.ffmpegService.Start(micDevice, speakerDevice)
 	if err != nil {
+		log.Printf("[recording] ERROR: audio pipe failed: %v", err)
 		return fmt.Sprintf("error audio pipe: %v", err)
 	}
+	log.Println("[recording] audio pipe open — STT stream starting")
 
 	// ── Screen recording (optional) ───────────────────────────────────────
 	outputDir := a.sessionOutputDir()
@@ -446,6 +510,99 @@ func (a *App) ListAudioDevices() (*ListSourcesResonse, error) {
 	}
 
 	return &ListSourcesResonse{Mics: mics, Speakers: speakers, Screens: screens}, nil
+}
+
+// ── ATS client — Wails-bound methods ──────────────────────────────────────
+
+// ATSLogin authenticates against the ATS and stores the session cookie.
+// Returns the LoginResponse or an error string.
+func (a *App) ATSLogin(username, password string) (*atsclient.LoginResponse, error) {
+	resp, err := a.atsClient.Login(username, password)
+	if err != nil {
+		return nil, fmt.Errorf("login failed: %w", err)
+	}
+	return resp, nil
+}
+
+// ATSInterviewList returns all interviews visible to the current session.
+func (a *App) ATSInterviewList() ([]atsclient.InterviewListItem, error) {
+	return a.atsClient.InterviewList()
+}
+
+// ATSInterviewFind returns full detail for a single interview by name.
+func (a *App) ATSInterviewFind(name string) (*atsclient.InterviewFindResult, error) {
+	return a.atsClient.InterviewFind(name)
+}
+
+// ATSBeginSession fetches the interview from the ATS, maps its question bank to the
+// ADK format, and initialises the session — all in one call. Must be called before
+// StartRecording. Returns "ok" on success or a descriptive error string.
+func (a *App) ATSBeginSession(interviewName string) string {
+	log.Printf("[session] fetching interview %q from ATS", interviewName)
+
+	interview, err := a.atsClient.InterviewFind(interviewName)
+	if err != nil {
+		msg := fmt.Sprintf("ATSBeginSession: fetch interview %q: %v", interviewName, err)
+		log.Println("[session] ERROR:", msg)
+		return msg
+	}
+
+	questions := atsQuestionsToADK(interview.QuestionBank.Questions)
+	log.Printf("[session] interview=%q candidate=%q round=%q questions=%d",
+		interviewName,
+		interview.Candidate.Name,
+		interview.Round.Name,
+		len(questions),
+	)
+
+	userID := interview.Candidate.Email
+	if userID == "" {
+		userID = interviewName
+	}
+
+	result := a.StartSession(userID, questions)
+	if result != "ok" {
+		log.Printf("[session] ERROR: StartSession failed: %s", result)
+		return result
+	}
+
+	log.Printf("[session] ready — interview=%s user=%s questions=%d",
+		a.interviewID, a.userID, len(questions))
+	return "ok"
+}
+
+// atsQuestionsToADK converts ATS question structs to the adkutils format expected
+// by the session and orchestration pipeline.
+func atsQuestionsToADK(qs []atsclient.Question) []adkutils.QuestionBankQuestion {
+	out := make([]adkutils.QuestionBankQuestion, 0, len(qs))
+	for _, q := range qs {
+		criteria := make([]adkutils.EvaluationCriteria, 0, len(q.EvaluationCriteria))
+		for _, c := range q.EvaluationCriteria {
+			criteria = append(criteria, adkutils.EvaluationCriteria{
+				MustMention: strings.Join(c.MustMention, ", "),
+				BonusPoints: strings.Join(c.BonusPoints, ", "),
+			})
+		}
+		triggers := make([]adkutils.FollowupTrigger, 0, len(q.FollowupTriggers))
+		for _, t := range q.FollowupTriggers {
+			triggers = append(triggers, adkutils.FollowupTrigger{
+				Condition: t.Condition,
+				FollowUp:  t.FollowUp,
+			})
+		}
+		out = append(out, adkutils.QuestionBankQuestion{
+			ID:                   q.ID,
+			Category:             q.Category,
+			Difficulty:           q.Difficulty,
+			EstimatedTimeMinutes: q.EstimatedTimeMinutes,
+			Question:             q.Question,
+			IdealAnswerKeywords:  strings.Join(q.IdealAnswerKeywords, ", "),
+			EvaluationCriteria:   criteria,
+			FollowupTriggers:     triggers,
+			PassThreshold:        q.PassThreshold,
+		})
+	}
+	return out
 }
 
 func min(a, b int) int {
