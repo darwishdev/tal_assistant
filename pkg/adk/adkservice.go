@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"tal_assistant/pkg/adk/nextquestionextender"
+	"tal_assistant/pkg/adk/nextquestionindicator"
 	"tal_assistant/pkg/adk/signalingagent"
 	"tal_assistant/pkg/adk/signalingagentmapper"
 	"tal_assistant/pkg/adkutils"
@@ -32,6 +34,19 @@ type ADKServiceInterface interface {
 	SignalingAgentRun(req adkutils.AgentRunRequest) iter.Seq2[string, error]
 	NewSignalingAgentMapperState(req signalingagentmapper.SignalingAgentMapperState) map[string]any
 	SignalingAgentMapperRun(req adkutils.AgentRunRequest) (string, error)
+	NewNextQuestionIndicatorState(req nextquestionindicator.NextQuestionIndicatorState) map[string]any
+	NextQuestionIndicatorRun(req adkutils.AgentRunRequest) iter.Seq2[string, error]
+	NewNextQuestionExtenderState(req nextquestionextender.NextQuestionExtenderState) map[string]any
+	NextQuestionExtenderRun(req adkutils.AgentRunRequest) (adkutils.QuestionBankQuestion, error)
+	StartSession(ctx context.Context, userID string, questionBank []adkutils.QuestionBankQuestion) (InterviewSessions, error)
+	AppendQuestionToSessions(
+		ctx context.Context,
+		userID string,
+		signalingSessionID string,
+		mapperSessionID string,
+		indicatorSessionID string,
+		question adkutils.QuestionBankQuestion,
+	) error
 }
 
 // ADKService is the concrete implementation of InterviewService.
@@ -45,8 +60,12 @@ type ADKService struct {
 	sessionService              session.Service
 	singalinAgent               *signalingagent.SignalingAgent
 	signalingAgentRunner        *runner.Runner
-	signalingAgentMapper        *signalingagentmapper.SignalingAgentMapper
-	signalingAgentMapperRunner  *runner.Runner
+	signalingAgentMapper           *signalingagentmapper.SignalingAgentMapper
+	signalingAgentMapperRunner     *runner.Runner
+	nextQuestionIndicator         *nextquestionindicator.NextQuestionIndicator
+	nextQuestionIndicatorRunner   *runner.Runner
+	nextQuestionExtender          *nextquestionextender.NextQuestionExtender
+	nextQuestionExtenderRunner    *runner.Runner
 }
 
 // NewADKService builds the service and wires up all agents.
@@ -99,6 +118,32 @@ func NewADKService(ctx context.Context, geminiApiKey string) (ADKServiceInterfac
 		return nil, fmt.Errorf("error creating runner for signaling agent mapper: %w", err)
 	}
 
+	// next question indicator agent
+	nextQIndicator := nextquestionindicator.NewNextQuestionIndicator(&geminiModel)
+	nextQIndicatorConfig := nextQIndicator.NewAgentConfig(geminiModel)
+	nextQIndicatorRunner, err := NewAgentRunner(
+		ctx,
+		appName,
+		sessionService,
+		*nextQIndicatorConfig,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating runner for next question indicator agent: %w", err)
+	}
+
+	// next question extender agent
+	nextQExtender := nextquestionextender.NewNextQuestionExtender(&geminiProModel)
+	nextQExtenderConfig := nextQExtender.NewAgentConfig(geminiProModel)
+	nextQExtenderRunner, err := NewAgentRunner(
+		ctx,
+		appName,
+		sessionService,
+		*nextQExtenderConfig,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating runner for next question extender agent: %w", err)
+	}
+
 	return &ADKService{
 		sessionService:            sessionService,
 		geminiLiteModel:           geminiLiteModel,
@@ -107,8 +152,12 @@ func NewADKService(ctx context.Context, geminiApiKey string) (ADKServiceInterfac
 		geminiModel:               geminiModel,
 		geminiProModel:            geminiProModel,
 		signalingAgentRunner:      sginalingAgentRunner,
-		signalingAgentMapper:      signalingMapper,
-		signalingAgentMapperRunner: signalingMapperRunner,
+		signalingAgentMapper:        signalingMapper,
+		signalingAgentMapperRunner:  signalingMapperRunner,
+		nextQuestionIndicator:       nextQIndicator,
+		nextQuestionIndicatorRunner: nextQIndicatorRunner,
+		nextQuestionExtender:        nextQExtender,
+		nextQuestionExtenderRunner:  nextQExtenderRunner,
 	}, nil
 }
 func (s *ADKService) SessionUpsert(

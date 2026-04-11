@@ -9,6 +9,28 @@ import (
 	"google.golang.org/adk/session"
 )
 
+type EvaluationCriteria struct {
+	BonusPoints string `json:"bonus_points"`
+	MustMention string `json:"must_mention"`
+}
+
+type FollowupTrigger struct {
+	Condition string `json:"condition"`
+	FollowUp  string `json:"follow_up"`
+}
+
+type QuestionBankQuestion struct {
+	ID                   string               `json:"id"`
+	Category             string               `json:"category"`
+	Difficulty           string               `json:"difficulty"`
+	EstimatedTimeMinutes int                  `json:"estimated_time_minutes"`
+	EvaluationCriteria   []EvaluationCriteria `json:"evaluation_criteria"`
+	FollowupTriggers     []FollowupTrigger    `json:"followup_triggers"`
+	IdealAnswerKeywords  string               `json:"ideal_answer_keywords"`
+	PassThreshold        float64              `json:"pass_treshold"`
+	Question             string               `json:"question"`
+}
+
 type AgentRunRequest struct {
 	Ctx       context.Context
 	SessionID string

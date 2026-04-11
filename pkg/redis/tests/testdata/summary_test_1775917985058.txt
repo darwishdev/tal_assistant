@@ -1,0 +1,72 @@
+Interview Summary
+interview_id : test_1775917985058
+timestamp    : 2026-04-11T16:33:44+02:00
+════════════════════════════════════════
+
+Q&A
+────────────────────────────────────────
+[Question #1 — TLQ001]
+Bank question    : Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency.
+Transcribed      : Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.Q:Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.
+Answer           : I would use a WebSocket connection to stream audio chunks from the client in real time. Each chunk goes through VAD — voice activity detection — to detect when the candidate finishes speaking. Once a speech boundary is detected, the audio is sent to a streaming transcription service. The transcript is pushed onto a Redis message queue. A consumer picks it up, calls an LLM with a tight latency budget of around 500ms for tip generation, and the result is pushed back to the recruiter UI over the same WebSocket. The entire pipeline is event-driven to keep end-to-end latency under 2 seconds.A:I would use a WebSocket connection to stream audio chunks from the client in real time. Each chunk goes through VAD — voice activity detection — to detect when the candidate finishes speaking. Once a speech boundary is detected, the audio is sent to a streaming transcription service. The transcript is pushed onto a Redis message queue. A consumer picks it up, calls an LLM with a tight latency budget of around 500ms for tip generation, and the result is pushed back to the recruiter UI over the same WebSocket. The entire pipeline is event-driven to keep end-to-end latency under 2 seconds.
+  [Follow-up #1 — TLQ003]
+  Bank question    : How would you handle reconnection if the WebSocket drops mid-interview?F:How would you handle reconnection if the WebSocket drops mid-interview?
+  Transcribed      : 
+  Answer           : 
+
+
+[Question #2 — TLQ002]
+Bank question    : Explain the Python GIL and its impact on multi-threaded programs.
+Transcribed      : Explain the Python GIL and its impact on multi-threaded programs.Q:Explain the Python GIL and its impact on multi-threaded programs.
+Answer           : 
+
+════════════════════════════════════════
+Agent Responses (11)
+────────────────────────────────────────
+  [16:33:07.270] agent=signaling_agent
+    input  : Recruiter: Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.
+    output : Q:Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.Q:Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.
+
+  [16:33:08.427] agent=signaling_agent_mapper
+    input  : Q:Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.Q:Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.
+    output : TLQ001
+
+  [16:33:12.275] agent=next_question_indicator_agent
+    input  : Q:Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.Q:Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.
+
+    output : NoneNone
+
+  [16:33:15.543] agent=signaling_agent
+    input  : Candidate: I would use a WebSocket connection to stream audio chunks from the client in real time. Each chunk goes through VAD — voice activity detection — to detect when the candidate finishes speaking. Once a speech boundary is detected, the audio is sent to a streaming transcription service. The transcript is pushed onto a Redis message queue. A consumer picks it up, calls an LLM with a tight latency budget of around 500ms for tip generation, and the result is pushed back to the recruiter UI over the same WebSocket. The entire pipeline is event-driven to keep end-to-end latency under 2 seconds.
+    output : A:I would use a WebSocket connection to stream audio chunks from the client in real time. Each chunk goes through VAD — voice activity detection — to detect when the candidate finishes speaking. Once a speech boundary is detected, the audio is sent to a streaming transcription service. The transcript is pushed onto a Redis message queue. A consumer picks it up, calls an LLM with a tight latency budget of around 500ms for tip generation, and the result is pushed back to the recruiter UI over the same WebSocket. The entire pipeline is event-driven to keep end-to-end latency under 2 seconds.A:I would use a WebSocket connection to stream audio chunks from the client in real time. Each chunk goes through VAD — voice activity detection — to detect when the candidate finishes speaking. Once a speech boundary is detected, the audio is sent to a streaming transcription service. The transcript is pushed onto a Redis message queue. A consumer picks it up, calls an LLM with a tight latency budget of around 500ms for tip generation, and the result is pushed back to the recruiter UI over the same WebSocket. The entire pipeline is event-driven to keep end-to-end latency under 2 seconds.
+
+  [16:33:16.693] agent=signaling_agent_mapper
+    input  : A:I would use a WebSocket connection to stream audio chunks from the client in real time. Each chunk goes through VAD — voice activity detection — to detect when the candidate finishes speaking. Once a speech boundary is detected, the audio is sent to a streaming transcription service. The transcript is pushed onto a Redis message queue. A consumer picks it up, calls an LLM with a tight latency budget of around 500ms for tip generation, and the result is pushed back to the recruiter UI over the same WebSocket. The entire pipeline is event-driven to keep end-to-end latency under 2 seconds.A:I would use a WebSocket connection to stream audio chunks from the client in real time. Each chunk goes through VAD — voice activity detection — to detect when the candidate finishes speaking. Once a speech boundary is detected, the audio is sent to a streaming transcription service. The transcript is pushed onto a Redis message queue. A consumer picks it up, calls an LLM with a tight latency budget of around 500ms for tip generation, and the result is pushed back to the recruiter UI over the same WebSocket. The entire pipeline is event-driven to keep end-to-end latency under 2 seconds.
+    output : TLQ001
+
+  [16:33:21.917] agent=next_question_indicator_agent
+    input  : Q:Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.Q:Design a real-time interview assistant that processes live audio and surfaces tips to the recruiter under 2 seconds of latency. Walk me through the architecture.
+A:I would use a WebSocket connection to stream audio chunks from the client in real time. Each chunk goes through VAD — voice activity detection — to detect when the candidate finishes speaking. Once a speech boundary is detected, the audio is sent to a streaming transcription service. The transcript is pushed onto a Redis message queue. A consumer picks it up, calls an LLM with a tight latency budget of around 500ms for tip generation, and the result is pushed back to the recruiter UI over the same WebSocket. The entire pipeline is event-driven to keep end-to-end latency under 2 seconds.A:I would use a WebSocket connection to stream audio chunks from the client in real time. Each chunk goes through VAD — voice activity detection — to detect when the candidate finishes speaking. Once a speech boundary is detected, the audio is sent to a streaming transcription service. The transcript is pushed onto a Redis message queue. A consumer picks it up, calls an LLM with a tight latency budget of around 500ms for tip generation, and the result is pushed back to the recruiter UI over the same WebSocket. The entire pipeline is event-driven to keep end-to-end latency under 2 seconds.
+
+    output : F:How would you handle reconnection if the WebSocket drops mid-interview?F:How would you handle reconnection if the WebSocket drops mid-interview?
+
+  [16:33:41.476] agent=next_question_extender
+    input  : How would you handle reconnection if the WebSocket drops mid-interview?F:How would you handle reconnection if the WebSocket drops mid-interview?
+    output : {"id":"TLQ003","category":"System Design","difficulty":"Medium","estimated_time_minutes":5,"evaluation_criteria":[{"bonus_points":"Discussing session resumption using tokens and preserving the local client-side audio buffer","must_mention":"Client-side exponential backoff or retry logic"},{"bonus_points":"Addressing duplicated packets or ensuring exact-once delivery semantics post-reconnection","must_mention":"State recovery on the backend using unique session IDs"}],"followup_triggers":[{"condition":"if_mentions_buffer","follow_up":"How large should the local audio buffer be to handle prolonged disconnects without crashing the browser?"},{"condition":"if_mentions_state_sync","follow_up":"How do you handle the missing transcript context during the offline period once reconnected?"}],"ideal_answer_keywords":"exponential backoff, jitter, session ID, local buffer, reconnect token, state synchronization, idempotency, WebSocket lifecycle","pass_treshold":0.6,"question":"How would you handle reconnection if the WebSocket drops mid-interview?F:How would you handle reconnection if the WebSocket drops mid-interview?"}
+
+  [16:33:41.477] agent=signaling_agent
+    input  : Recruiter: Explain the Python GIL and its impact on multi-threaded programs.
+    output : Q:Explain the Python GIL and its impact on multi-threaded programs.Q:Explain the Python GIL and its impact on multi-threaded programs.
+
+  [16:33:42.501] agent=signaling_agent_mapper
+    input  : Q:Explain the Python GIL and its impact on multi-threaded programs.Q:Explain the Python GIL and its impact on multi-threaded programs.
+    output : TLQ002
+
+  [16:33:42.502] agent=signaling_agent
+    input  : Candidate: The GIL is a mutex in CPython that allows only one thread to execute Python bytecode at a time, which prevents true parallelism for CPU-bound threads. For IO-bound work the GIL is released during IO waits, so threading still helps there. For CPU-bound parallelism I would use the multiprocessing module instead, which spawns separate processes each with their own GIL.
+    output : A:The GIL is a mutex in CPython that allows only one thread to execute Python bytecode at a time, which prevents true parallelism for CPU-bound threads. For IO-bound work the GIL is released during IO waits, so threading still helps there. For CPU-bound parallelism I would use the multiprocessing module instead, which spawns separate processes each with their own GIL.A:The GIL is a mutex in CPython that allows only one thread to execute Python bytecode at a time, which prevents true parallelism for CPU-bound threads. For IO-bound work the GIL is released during IO waits, so threading still helps there. For CPU-bound parallelism I would use the multiprocessing module instead, which spawns separate processes each with their own GIL.
+
+  [16:33:43.932] agent=signaling_agent_mapper
+    input  : A:The GIL is a mutex in CPython that allows only one thread to execute Python bytecode at a time, which prevents true parallelism for CPU-bound threads. For IO-bound work the GIL is released during IO waits, so threading still helps there. For CPU-bound parallelism I would use the multiprocessing module instead, which spawns separate processes each with their own GIL.A:The GIL is a mutex in CPython that allows only one thread to execute Python bytecode at a time, which prevents true parallelism for CPU-bound threads. For IO-bound work the GIL is released during IO waits, so threading still helps there. For CPU-bound parallelism I would use the multiprocessing module instead, which spawns separate processes each with their own GIL.
+    output : TLQ002
+

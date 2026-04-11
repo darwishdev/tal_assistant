@@ -1,0 +1,48 @@
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/weak_answer_no_action
+timestamp : 2026-04-10T22:42:04+02:00
+session   : TestNextQuestionIndicatorRun_1775853713928
+input     : Q: Design a real-time interview assistant system.
+A: I would use a microphone and send the audio to a server somehow.
+output    : NoneNone
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/weak_answer_no_action
+timestamp : 2026-04-10T22:58:45+02:00
+session   : TestNextQuestionIndicatorRun_1775854716211
+input     : Q: Design a real-time interview assistant system.
+A: I would use a microphone and send the audio to a server somehow.
+output    : F:How does the system know when the candidate has finished speaking before sending to the LLM?F:How does the system know when the candidate has finished speaking before sending to the LLM?
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/weak_answer_no_action
+timestamp : 2026-04-10T23:56:57+02:00
+session   : TestNextQuestionIndicatorRun_1775858208262
+input     : Q: Design a real-time interview assistant system.
+A: I would use a microphone and send the audio to a server somehow.
+output    : F:How does the system know when the candidate has finished speaking before sending to the LLM?F:How does the system know when the candidate has finished speaking before sending to the LLM?
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/weak_answer_no_action
+timestamp : 2026-04-11T00:04:32+02:00
+session   : TestNextQuestionIndicatorRun_1775858658004
+input     : Q: Design a real-time interview assistant system.
+A: I would use a microphone and send the audio to a server somehow.
+output    : NoneNone
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/weak_answer_no_action
+timestamp : 2026-04-11T16:33:44+02:00
+session   : TestNextQuestionIndicatorRun_1775918012261
+input     : Q: Design a real-time interview assistant system.
+A: I would use a microphone and send the audio to a server somehow.
+output    : NoneNone
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/weak_answer_no_action
+timestamp : 2026-04-11T16:41:29+02:00
+session   : TestNextQuestionIndicatorRun_1775918482277
+input     : Q: Design a real-time interview assistant system.
+A: I would use a microphone and send the audio to a server somehow.
+output    : F:How does the system know when the candidate has finished speaking before sending to the LLM?F:How does the system know when the candidate has finished speaking before sending to the LLM?
+

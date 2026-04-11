@@ -1,0 +1,35 @@
+────────────────────────────────────────
+test      : TestNextQuestionExtenderRun/followup_question_with_parent
+timestamp : 2026-04-10T22:58:23+02:00
+session   : TestNextQuestionExtenderRun_1775854691149
+input     : How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+output    : TLQ003
+
+────────────────────────────────────────
+test      : TestNextQuestionExtenderRun/followup_question_with_parent
+timestamp : 2026-04-10T23:56:35+02:00
+session   : TestNextQuestionExtenderRun_1775858183071
+input     : How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+output    : TLQ003
+
+────────────────────────────────────────
+test      : TestNextQuestionExtenderRun/followup_question_with_parent
+timestamp : 2026-04-11T00:04:04+02:00
+session   : TestNextQuestionExtenderRun_1775858631313
+input     : How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+output    : TLQ003
+
+────────────────────────────────────────
+test      : TestNextQuestionExtenderRun/followup_question_with_parent
+timestamp : 2026-04-11T16:33:20+02:00
+session   : TestNextQuestionExtenderRun_1775917988403
+input     : How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+output    : TLQ003
+
+────────────────────────────────────────
+test      : TestNextQuestionExtenderRun/followup_question_with_parent
+timestamp : 2026-04-11T16:41:09+02:00
+session   : TestNextQuestionExtenderRun_1775918448092
+input     : How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+output    : TLQ003
+

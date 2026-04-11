@@ -1,0 +1,48 @@
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/answer_mentions_websocket_triggers_followup
+timestamp : 2026-04-10T22:42:07+02:00
+session   : TestNextQuestionIndicatorRun_1775853713928
+input     : Q: Design a real-time interview assistant system.
+A: I'd use a WebSocket to stream audio from the browser to the backend, then process it there.
+output    : F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/answer_mentions_websocket_triggers_followup
+timestamp : 2026-04-10T22:58:49+02:00
+session   : TestNextQuestionIndicatorRun_1775854716211
+input     : Q: Design a real-time interview assistant system.
+A: I'd use a WebSocket to stream audio from the browser to the backend, then process it there.
+output    : F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/answer_mentions_websocket_triggers_followup
+timestamp : 2026-04-10T23:57:03+02:00
+session   : TestNextQuestionIndicatorRun_1775858208262
+input     : Q: Design a real-time interview assistant system.
+A: I'd use a WebSocket to stream audio from the browser to the backend, then process it there.
+output    : F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/answer_mentions_websocket_triggers_followup
+timestamp : 2026-04-11T00:04:36+02:00
+session   : TestNextQuestionIndicatorRun_1775858658004
+input     : Q: Design a real-time interview assistant system.
+A: I'd use a WebSocket to stream audio from the browser to the backend, then process it there.
+output    : F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/answer_mentions_websocket_triggers_followup
+timestamp : 2026-04-11T16:33:47+02:00
+session   : TestNextQuestionIndicatorRun_1775918012261
+input     : Q: Design a real-time interview assistant system.
+A: I'd use a WebSocket to stream audio from the browser to the backend, then process it there.
+output    : F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/answer_mentions_websocket_triggers_followup
+timestamp : 2026-04-11T16:41:32+02:00
+session   : TestNextQuestionIndicatorRun_1775918482277
+input     : Q: Design a real-time interview assistant system.
+A: I'd use a WebSocket to stream audio from the browser to the backend, then process it there.
+output    : F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?F:How would you handle reconnection and message ordering if the WebSocket drops mid-interview?
+
