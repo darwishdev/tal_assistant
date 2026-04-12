@@ -50,6 +50,7 @@ type RedisCacheInterface interface {
 	// Question bank — lookup map for agents
 	SaveQuestionBank(ctx context.Context, interviewID string, questions []adkutils.QuestionBankQuestion) error
 	FindQuestionBank(ctx context.Context, interviewID string) (map[string]adkutils.QuestionBankQuestion, error)
+	FindQuestionByID(ctx context.Context, interviewID string, questionID string) (*adkutils.QuestionBankQuestion, error)
 
 	// Current question pointer
 	UpsertCurrentQuestionPointer(ctx context.Context, interviewID string, questionID string) error
@@ -87,27 +88,40 @@ func NewRedisCacheClient() *RedisCacheClient {
 }
 
 // ── Question bank ──────────────────────────────
+// Storage layout: one Redis hash per interview.
+//   Key   → qbank:<interviewID>
+//   Field → <questionID>   (e.g. "TLQ001")
+//   Value → JSON-encoded QuestionBankQuestion
+//
+// We write each field individually through a pipeline so we never hit
+// variadic-argument ambiguity in go-redis regardless of patch version.
 
 func (c *RedisCacheClient) SaveQuestionBank(
 	ctx context.Context,
 	interviewID string,
 	questions []adkutils.QuestionBankQuestion,
 ) error {
+	if len(questions) == 0 {
+		return nil
+	}
 	key := questionBankKeyPrefix + interviewID
-	fields := make(map[string]any, len(questions))
+
+	pipe := c.client.Pipeline()
 	for _, q := range questions {
 		data, err := json.Marshal(q)
 		if err != nil {
 			return fmt.Errorf("marshal question %s: %w", q.ID, err)
 		}
-		fields[q.ID] = string(data)
+		// One HSET key field value per question — no variadic ambiguity.
+		pipe.HSet(ctx, key, q.ID, string(data))
 	}
-	if err := c.client.HSet(ctx, key, fields).Err(); err != nil {
+	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("save question bank for interview %s: %w", interviewID, err)
 	}
 	return nil
 }
 
+// FindQuestionBank returns every question in the bank as a map keyed by question ID.
 func (c *RedisCacheClient) FindQuestionBank(
 	ctx context.Context,
 	interviewID string,
@@ -126,6 +140,25 @@ func (c *RedisCacheClient) FindQuestionBank(
 		result[questionID] = q
 	}
 	return result, nil
+}
+
+// FindQuestionByID fetches a single question directly by its ID using HGET —
+// more efficient than loading the whole bank when only one question is needed.
+func (c *RedisCacheClient) FindQuestionByID(
+	ctx context.Context,
+	interviewID string,
+	questionID string,
+) (*adkutils.QuestionBankQuestion, error) {
+	key := questionBankKeyPrefix + interviewID
+	data, err := c.client.HGet(ctx, key, questionID).Result()
+	if err != nil {
+		return nil, fmt.Errorf("find question %s in bank for interview %s: %w", questionID, interviewID, err)
+	}
+	var q adkutils.QuestionBankQuestion
+	if err := json.Unmarshal([]byte(data), &q); err != nil {
+		return nil, fmt.Errorf("unmarshal question %s: %w", questionID, err)
+	}
+	return &q, nil
 }
 
 // ── Current question pointer ───────────────────

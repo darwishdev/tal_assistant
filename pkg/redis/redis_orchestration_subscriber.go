@@ -181,14 +181,9 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		log.Printf("[orchestrator] [%s] upsert current question pointer failed: %v", event.InterviewID, err)
 	}
 
-	questionBank, err := s.cache.FindQuestionBank(ctx, event.InterviewID)
+	currentQuestion, err := s.cache.FindQuestionByID(ctx, event.InterviewID, event.QuestionID)
 	if err != nil {
-		log.Printf("[orchestrator] [%s] find question bank failed: %v", event.InterviewID, err)
-		return
-	}
-	currentQuestion, ok := questionBank[event.QuestionID]
-	if !ok {
-		log.Printf("[orchestrator] [%s] question %s not found in bank", event.InterviewID, event.QuestionID)
+		log.Printf("[orchestrator] [%s] question %s not found in bank: %v", event.InterviewID, event.QuestionID, err)
 		return
 	}
 
@@ -198,7 +193,7 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		SessionID: event.IndicatorSessionID,
 		UserID:    event.UserID,
 		Prompt: nextquestionindicator.NextQuestionIndicatorInput{
-			CurrentQuestion: currentQuestion,
+			CurrentQuestion: *currentQuestion,
 			QAndA:           event.QAndA,
 		},
 	}) {
