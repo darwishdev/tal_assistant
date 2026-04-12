@@ -37,3 +37,50 @@ function showError(msg) {
     const lines = log.querySelectorAll('.err-line')
     if (lines.length > 20) lines[0].remove()
 }
+
+// ── LocalStorage with TTL ───────────────────────────────────────────────────
+
+// Save login session with TTL (default 24 hours)
+function saveLoginSession(username, password, loginResponse, ttlHours = 24) {
+    const expiresAt = Date.now() + (ttlHours * 60 * 60 * 1000)
+    const session = {
+        username,
+        password,
+        fullName: loginResponse.full_name,
+        homePage: loginResponse.home_page,
+        expiresAt
+    }
+    localStorage.setItem('ats_session', JSON.stringify(session))
+}
+
+// Get login session if valid (not expired)
+function getLoginSession() {
+    try {
+        const stored = localStorage.getItem('ats_session')
+        if (!stored) return null
+        
+        const session = JSON.parse(stored)
+        
+        // Check if expired
+        if (Date.now() > session.expiresAt) {
+            clearLoginSession()
+            return null
+        }
+        
+        return session
+    } catch (err) {
+        console.error('Failed to parse session:', err)
+        clearLoginSession()
+        return null
+    }
+}
+
+// Clear login session
+function clearLoginSession() {
+    localStorage.removeItem('ats_session')
+}
+
+// Check if session exists and is valid
+function hasValidSession() {
+    return getLoginSession() !== null
+}
