@@ -123,23 +123,58 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 		log.Printf("[orchestrator] [%s] save signaling agent response failed: %v", event.InterviewID, err)
 	}
 
-	questionID, err := s.adkSvc.SignalingAgentMapperRun(adkutils.AgentRunRequest{
-		Ctx:       ctx,
-		SessionID: event.MapperSessionID,
-		UserID:    event.UserID,
-		Prompt:    event.Signal,
-	})
-	if err != nil {
-		log.Printf("[orchestrator] [%s] mapper run failed: %v", event.InterviewID, err)
-		return
+	// Before calling the mapper agent, check if we can match the signal question
+	// directly against cached questions to avoid unnecessary AI calls
+	var questionID string
+	if strings.HasPrefix(event.Signal, "Q:") {
+		signalQuestionText := strings.TrimSpace(strings.TrimPrefix(event.Signal, "Q:"))
+		
+		// First check if it matches the current question
+		if currentPointer, err := s.cache.FindCurrentQuestionPointer(ctx, event.InterviewID); err == nil && currentPointer != "" {
+			if currentQ, err := s.cache.FindQuestionByID(ctx, event.InterviewID, currentPointer); err == nil {
+				if strings.EqualFold(strings.TrimSpace(currentQ.Question), signalQuestionText) {
+					questionID = currentPointer
+					log.Printf("[orchestrator] [%s] signal matched current question → %s (skipped mapper)", event.InterviewID, questionID)
+				}
+			}
+		}
+		
+		// If no match with current question, check all questions in the bank
+		if questionID == "" {
+			if summary, err := s.cache.FindInterviewSummary(ctx, event.InterviewID); err == nil {
+				for _, qa := range summary.Questions {
+					if strings.EqualFold(strings.TrimSpace(qa.Question.Question), signalQuestionText) {
+						questionID = qa.Question.ID
+						log.Printf("[orchestrator] [%s] signal matched question bank → %s (skipped mapper)", event.InterviewID, questionID)
+						break
+					}
+				}
+			}
+		}
 	}
-	if err := s.cache.SaveAgentResponse(ctx, event.InterviewID, AgentResponse{
-		Agent:  "signaling_agent_mapper",
-		Input:  event.Signal,
-		Output: questionID,
-	}); err != nil {
-		log.Printf("[orchestrator] [%s] save mapper response failed: %v", event.InterviewID, err)
+
+	// If no direct match found, call the mapper agent
+	if questionID == "" {
+		var err error
+		questionID, err = s.adkSvc.SignalingAgentMapperRun(adkutils.AgentRunRequest{
+			Ctx:       ctx,
+			SessionID: event.MapperSessionID,
+			UserID:    event.UserID,
+			Prompt:    event.Signal,
+		})
+		if err != nil {
+			log.Printf("[orchestrator] [%s] mapper run failed: %v", event.InterviewID, err)
+			return
+		}
+		if err := s.cache.SaveAgentResponse(ctx, event.InterviewID, AgentResponse{
+			Agent:  "signaling_agent_mapper",
+			Input:  event.Signal,
+			Output: questionID,
+		}); err != nil {
+			log.Printf("[orchestrator] [%s] save mapper response failed: %v", event.InterviewID, err)
+		}
 	}
+	
 	if questionID == "UNKNOWN" {
 		log.Printf("[orchestrator] [%s] mapper returned UNKNOWN — skipping", event.InterviewID)
 		return
