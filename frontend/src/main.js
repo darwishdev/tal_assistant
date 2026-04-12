@@ -1,3 +1,5 @@
+import { getLoginSession, saveLoginSession, clearLoginSession, hasValidSession } from './utils.js'
+
 // ── State ──────────────────────────────────────────────────────────────────
 let _selectedInterview = null   // name of the interview chosen from the list
 let recording = false
@@ -1042,3 +1044,9 @@ function msToSRT(ms) {
 function pad(n, l = 2) { return String(n).padStart(l, '0') }
 function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
 function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+Object.assign(window, {
+    submitLogin, navigate, loadInterviewList,
+    goToFind, goToSession, switchTab,
+    startSessionAndRecord, toggleRec, toggleHistoryMode,
+    inferNextQuestion, loadAudioDevices,
+})

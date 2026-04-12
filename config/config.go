@@ -1,10 +1,17 @@
 package config
 
 import (
+	"bytes"
+	_ "embed"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/viper"
 )
+
+//go:embed app.env
+var embeddedConfig []byte
 
 type Config struct {
 	GoogleProjectID string `mapstructure:"GOOGLE_PROJECT_ID"`
@@ -26,21 +33,36 @@ type Config struct {
 var AppConfig Config
 
 func Load() *Config {
-
 	viper.SetConfigType("env")
-	viper.SetConfigFile("./config/app.env")
+	viper.AutomaticEnv()
 
-	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("failed reading config ./config/app.env: %v", err)
+	// Load embedded defaults — binary works standalone without any file.
+	if err := viper.ReadConfig(bytes.NewReader(embeddedConfig)); err != nil {
+		log.Printf("warning: could not parse embedded config: %v", err)
 	}
-	log.Println("Loaded config from: ./config/app.env")
+
+	// Optionally override with a local file (useful during development).
+	homeDir, _ := os.UserHomeDir()
+	overrides := []string{
+		"./config/app.env",
+		filepath.Join(homeDir, ".config", "tal_assistant", "app.env"),
+	}
+	for _, p := range overrides {
+		if _, err := os.Stat(p); err == nil {
+			viper.SetConfigFile(p)
+			if err := viper.ReadInConfig(); err != nil {
+				log.Printf("warning: could not read override config %s: %v", p, err)
+			} else {
+				log.Println("Config overridden from:", p)
+			}
+			break
+		}
+	}
 
 	if err := viper.Unmarshal(&AppConfig); err != nil {
 		log.Fatalf("Unable to decode config: %v", err)
 	}
 
-	// build derived values
 	AppConfig.RedisAddress = AppConfig.RedisHost + ":" + AppConfig.RedisPort
-
 	return &AppConfig
 }
