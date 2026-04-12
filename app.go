@@ -48,9 +48,10 @@ type App struct {
 	ffmpegCmd2       *exec.Cmd
 	stopCh           chan struct{}
 
-	sessions    *adk.InterviewSessions
-	interviewID string
-	userID      string
+	sessions            *adk.InterviewSessions
+	interviewID         string
+	userID              string
+	initialQuestionText string // first question text, emitted to UI when recording starts
 
 	atsClient atsclient.ATSClientInterface
 
@@ -288,6 +289,12 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 
 	a.sigQueue = make(chan sigJob, 50)
 	go a.processSigQueue()
+
+	// Push the first question to the UI immediately so the recruiter sees it
+	// as soon as the active-session view renders.
+	if a.initialQuestionText != "" {
+		a.emit("current_question", a.initialQuestionText)
+	}
 
 	// ── Audio pipe for STT ────────────────────────────────────────────────
 	audioPipe, err := a.ffmpegService.Start(micDevice, speakerDevice)
@@ -554,6 +561,13 @@ func (a *App) ATSBeginSession(interviewName string) string {
 		interview.Round.Name,
 		len(questions),
 	)
+
+	// Cache first question text so we can push it to the UI the moment recording starts
+	if len(questions) > 0 {
+		a.initialQuestionText = questions[0].Question
+	} else {
+		a.initialQuestionText = ""
+	}
 
 	userID := interview.Candidate.Email
 	if userID == "" {

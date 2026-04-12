@@ -145,6 +145,18 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 		return
 	}
 
+	// Update the active question pointer immediately — before NQI runs,
+	// so the UI and any concurrent readers always know the current question.
+	if err := s.cache.UpsertCurrentQuestionPointer(ctx, event.InterviewID, questionID); err != nil {
+		log.Printf("[orchestrator] [%s] upsert current question pointer failed: %v", event.InterviewID, err)
+	}
+
+	// Emit the current question text to the recruiter UI.
+	if q, err := s.cache.FindQuestionByID(ctx, event.InterviewID, questionID); err == nil {
+		s.emitToUi("current_question", q.Question)
+		log.Printf("[orchestrator] [%s] active question → %s: %q", event.InterviewID, questionID, q.Question)
+	}
+
 	if err := s.publisher.PublishSignalMapped(ctx, SignalMappedEvent{
 		InterviewID:        event.InterviewID,
 		UserID:             event.UserID,
@@ -177,10 +189,6 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		}
 	}
 
-	if err := s.cache.UpsertCurrentQuestionPointer(ctx, event.InterviewID, event.QuestionID); err != nil {
-		log.Printf("[orchestrator] [%s] upsert current question pointer failed: %v", event.InterviewID, err)
-	}
-
 	currentQuestion, err := s.cache.FindQuestionByID(ctx, event.InterviewID, event.QuestionID)
 	if err != nil {
 		log.Printf("[orchestrator] [%s] question %s not found in bank: %v", event.InterviewID, event.QuestionID, err)
@@ -202,8 +210,17 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 			return
 		}
 		if chunk == "None" {
-			log.Printf("[orchestrator] [%s] NQI run returned null", event.InterviewID)
+			log.Printf("[orchestrator] [%s] NQI returned None — no action needed", event.InterviewID)
 			return
+		}
+
+		// The ADK SDK streams incremental chunks then fires one final event
+		// containing the ENTIRE accumulated text as a single chunk.
+		// Detect it: if this chunk equals everything we already accumulated,
+		// it is the duplicate final emission — drop it and stop.
+		if sb.Len() > 0 && chunk == sb.String() {
+			log.Printf("[orchestrator] [%s] NQI dedup: suppressed final re-emission (len=%d)", event.InterviewID, len(chunk))
+			break
 		}
 
 		s.emitToUi("nqi_chunk_recieved", chunk)
@@ -308,6 +325,10 @@ func (s *OrchestrationSubscriber) handleNextQuestionExtended(ctx context.Context
 	if err := s.cache.UpsertCurrentQuestionPointer(ctx, event.InterviewID, event.Question.ID); err != nil {
 		log.Printf("[orchestrator] [%s] upsert current question pointer failed: %v", event.InterviewID, err)
 	}
+
+	// Surface the new question text to the recruiter UI immediately.
+	s.emitToUi("current_question", event.Question.Question)
+	log.Printf("[orchestrator] [%s] new %s question surfaced → %s", event.InterviewID, event.Type, event.Question.ID)
 
 	if err := s.adkSvc.AppendQuestionToSessions(
 		ctx,

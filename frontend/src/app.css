@@ -508,6 +508,35 @@ html, body {
     flex-shrink: 0;
 }
 
+/* ── Current question card ── */
+.current-q-card {
+    flex-shrink: 0;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(128, 0, 128, 0.08);
+}
+
+.current-q-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: rgba(200, 150, 255, 0.5);
+    margin-bottom: 5px;
+}
+
+.current-q-text {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(240, 220, 255, 0.95);
+    line-height: 1.55;
+    transition: opacity 0.18s ease;
+}
+
+.current-q-text--changing {
+    opacity: 0;
+}
+
 .nqi-panel-title {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 9px;

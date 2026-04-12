@@ -62,6 +62,12 @@ window.runtime.EventsOn('nqi_chunk_recieved', (chunk) => {
     _onNqiChunk(chunk)
 })
 
+// Active question pointer — emitted by Go when the mapper resolves a signal
+// or when NQE produces a new question.  Shows question text in the NQI panel.
+window.runtime.EventsOn('current_question', (text) => {
+    _updateCurrentQuestion(text)
+})
+
 // ── Router ─────────────────────────────────────────────────────────────────
 function navigate(route) {
     window.location.hash = route
@@ -541,10 +547,19 @@ function renderActiveSession(timerDeferred = false) {
             <!-- NQI panel -->
             <div id="nqi-panel">
                 <div class="nqi-panel-header">
-                    <span class="nqi-panel-title">Next Question</span>
+                    <span class="nqi-panel-title">Questions</span>
                     <button id="infer-btn" class="ghost-btn" onclick="inferNextQuestion()">✦ Ask</button>
                 </div>
+
+                <!-- Current active question card — updated live as the interview progresses -->
+                <div id="current-question-card" class="current-q-card">
+                    <div class="current-q-label">Current Question</div>
+                    <div id="current-q-text" class="current-q-text">Waiting for session to start…</div>
+                </div>
+
+                <!-- NQI suggestion stream -->
                 <div id="nqi-messages"></div>
+
                 <div id="chat-bar">
                     <input id="chat-input" class="field-input" type="text"
                            placeholder="Guide next question… (or leave blank for auto)" />
@@ -667,6 +682,20 @@ function _onNqiChunk(chunk) {
         _nqiBuf = ''
         document.getElementById('infer-btn')?.classList.remove('pulse')
     }, NQI_DEBOUNCE_MS)
+}
+
+// ── Current question display ──────────────────────────────────────────────
+// Called whenever Go emits 'current_question' — on session start (first question)
+// and every time the mapper resolves a new active question.
+function _updateCurrentQuestion(text) {
+    const el = document.getElementById('current-q-text')
+    if (!el) return
+    // Animate the swap so the recruiter notices the change
+    el.classList.add('current-q-text--changing')
+    setTimeout(() => {
+        el.textContent = text
+        el.classList.remove('current-q-text--changing')
+    }, 180)
 }
 
 // ── Session start (start_session → active_session) ─────────────────────────
