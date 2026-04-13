@@ -29,6 +29,7 @@ type SignalDetectedEvent struct {
 	MapperSessionID    string `json:"mapper_session_id"`
 	IndicatorSessionID string `json:"indicator_session_id"`
 	ExtenderSessionID  string `json:"extender_session_id"`
+	JudgingSessionID   string `json:"judging_session_id"`
 }
 
 // SignalMappedEvent is published after the mapper resolves a signal to a question ID.
@@ -42,6 +43,7 @@ type SignalMappedEvent struct {
 	MapperSessionID    string `json:"mapper_session_id"`
 	IndicatorSessionID string `json:"indicator_session_id"`
 	ExtenderSessionID  string `json:"extender_session_id"`
+	JudgingSessionID   string `json:"judging_session_id"`
 }
 
 // NextQuestionIndicatedEvent is published after the NQI agent evaluates the Q&A.
@@ -54,6 +56,7 @@ type NextQuestionIndicatedEvent struct {
 	MapperSessionID    string `json:"mapper_session_id"`
 	IndicatorSessionID string `json:"indicator_session_id"`
 	ExtenderSessionID  string `json:"extender_session_id"`
+	JudgingSessionID   string `json:"judging_session_id"`
 }
 
 // NextQuestionExtendedEvent is published after the NQE agent builds the full question struct.
@@ -67,6 +70,7 @@ type NextQuestionExtendedEvent struct {
 	SignalingSessionID string                        `json:"signaling_session_id"`
 	MapperSessionID    string                        `json:"mapper_session_id"`
 	IndicatorSessionID string                        `json:"indicator_session_id"`
+	JudgingSessionID   string                        `json:"judging_session_id"`
 }
 
 type PublisherInterface interface {

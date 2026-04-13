@@ -3,6 +3,7 @@ package adk
 import (
 	"context"
 	"fmt"
+	"tal_assistant/pkg/adk/judgingagent"
 	"tal_assistant/pkg/adk/nextquestionextender"
 	"tal_assistant/pkg/adk/nextquestionindicator"
 	"tal_assistant/pkg/adk/signalingagent"
@@ -16,6 +17,7 @@ type InterviewSessions struct {
 	SignalingAgentMapperSessionID  string
 	NextQuestionIndicatorSessionID string
 	NextQuestionExtenderSessionID  string
+	JudgingAgentSessionID          string
 }
 
 func (s *ADKService) StartSession(
@@ -29,6 +31,7 @@ func (s *ADKService) StartSession(
 		SignalingAgentMapperSessionID:  base + "_mapper",
 		NextQuestionIndicatorSessionID: base + "_indicator",
 		NextQuestionExtenderSessionID:  base + "_extender",
+		JudgingAgentSessionID:          base + "_judging",
 	}
 
 	// signaling agent — needs question texts only
@@ -74,5 +77,27 @@ func (s *ADKService) StartSession(
 		return InterviewSessions{}, fmt.Errorf("start session: next question extender: %w", err)
 	}
 
+	// judging agent — interview context will be set when judging starts
+	judgingState := s.judgingAgent.NewAgentState(judgingagent.JudgingAgentState{
+		InterviewContext: "", // Set later when interview details are available
+	})
+	if err := s.SessionUpsert(ctx, sessions.JudgingAgentSessionID, userID, judgingState); err != nil {
+		return InterviewSessions{}, fmt.Errorf("start session: judging agent: %w", err)
+	}
+
 	return sessions, nil
+}
+
+// SetJudgingAgentContext updates the interview context for the judging agent after session initialization.
+// This should be called once interview details are available.
+func (s *ADKService) SetJudgingAgentContext(
+	ctx context.Context,
+	sessionID string,
+	userID string,
+	interviewContext string,
+) error {
+	judgingState := s.judgingAgent.NewAgentState(judgingagent.JudgingAgentState{
+		InterviewContext: interviewContext,
+	})
+	return s.SessionUpsert(ctx, sessionID, userID, judgingState)
 }

@@ -9,8 +9,10 @@ let selectedMic = null
 let selectedSpeaker = null
 let selectedScreen = null
 let historyMode = false
+let summaryViewMode = false  // toggle between conversation and summary in history mode
 let transcriptHistory = []
 let currentPartial = { label: '', text: '' }
+let currentSummary = null  // cache the latest summary
 
 const NQI_CONTEXT_LINES = 10
 
@@ -68,6 +70,16 @@ window.runtime.EventsOn('nqi_chunk_recieved', (chunk) => {
 // or when NQE produces a new question.  Shows question text in the NQI panel.
 window.runtime.EventsOn('current_question', (text) => {
     _updateCurrentQuestion(text)
+})
+
+// Judgment received from judging agent after each answer evaluation
+window.runtime.EventsOn('judgment_received', (data) => {
+    _onJudgmentReceived(data)
+})
+
+// Interview summary updated after each judgment is saved
+window.runtime.EventsOn('interview_summary_updated', (summary) => {
+    _onInterviewSummaryUpdated(summary)
 })
 
 // ── Router ─────────────────────────────────────────────────────────────────
@@ -576,6 +588,7 @@ function renderActiveSession(timerDeferred = false) {
             <span id="rec-dot" class="rec-dot"></span>
             <span id="rec-timer" class="rec-timer">00:00</span>
             <button id="history-toggle" class="ghost-btn" onclick="toggleHistoryMode()" style="display:none">📜 History</button>
+            <button id="summary-toggle" class="ghost-btn" onclick="toggleSummaryView()" style="display:none">📊 Summary</button>
             <div class="rec-bar-spacer"></div>
             <button id="rec-btn" onclick="toggleRec()" class="stop-btn">■ Stop</button>
         </div>
@@ -607,14 +620,27 @@ function renderActiveSession(timerDeferred = false) {
                     <button id="infer-btn" class="ghost-btn" onclick="inferNextQuestion()">✦ Ask</button>
                 </div>
 
-                <!-- Current active question card — updated live as the interview progresses -->
-                <div id="current-question-card" class="current-q-card">
-                    <div class="current-q-label">Current Question</div>
-                    <div id="current-q-text" class="current-q-text">Waiting for session to start…</div>
-                </div>
+                <!-- Scrollable content wrapper -->
+                <div id="nqi-scroll-wrapper">
+                    <!-- Current active question card — updated live as the interview progresses -->
+                    <div id="current-question-card" class="current-q-card">
+                        <div class="current-q-label">Current Question</div>
+                        <div id="current-q-text" class="current-q-text">Waiting for session to start…</div>
+                    </div>
 
-                <!-- NQI suggestion stream -->
-                <div id="nqi-messages"></div>
+                    <!-- Latest Judgment Card -->
+                    <div id="judgment-card" class="judgment-card" style="display:none">
+                        <div class="judgment-header">
+                            <span class="judgment-label">Latest Judgment</span>
+                            <span id="judgment-score" class="judgment-score"></span>
+                        </div>
+                        <div id="judgment-verdict" class="judgment-verdict"></div>
+                        <div id="judgment-details" class="judgment-details"></div>
+                    </div>
+
+                    <!-- NQI suggestion stream -->
+                    <div id="nqi-messages"></div>
+                </div>
 
                 <div id="chat-bar">
                     <input id="chat-input" class="field-input" type="text"
@@ -721,7 +747,10 @@ function _onNqiChunk(chunk) {
 
     const textEl = document.getElementById('nqi-stream-text')
     if (textEl) textEl.textContent = _nqiBuf
-    messages.scrollTop = messages.scrollHeight
+    
+    // Scroll the wrapper instead of messages
+    const wrapper = document.getElementById('nqi-scroll-wrapper')
+    if (wrapper) wrapper.scrollTop = wrapper.scrollHeight
 
     clearTimeout(_nqiDebounce)
     _nqiDebounce = setTimeout(() => {
@@ -752,6 +781,146 @@ function _updateCurrentQuestion(text) {
         el.textContent = text
         el.classList.remove('current-q-text--changing')
     }, 180)
+}
+
+// ── Judgment display ──────────────────────────────────────────────────────
+// Called when judging agent completes evaluation of a Q&A pair
+function _onJudgmentReceived(data) {
+    const card = document.getElementById('judgment-card')
+    if (!card) return
+
+    const judgment = data.judgment
+    const passStatus = judgment.pass ? 'PASS' : 'FAIL'
+    const passClass = judgment.pass ? 'pass' : 'fail'
+
+    // Update score badge
+    const scoreEl = document.getElementById('judgment-score')
+    if (scoreEl) {
+        scoreEl.textContent = `${judgment.score}/100 ${passStatus}`
+        scoreEl.className = `judgment-score judgment-score--${passClass}`
+    }
+
+    // Update verdict
+    const verdictEl = document.getElementById('judgment-verdict')
+    if (verdictEl) {
+        verdictEl.textContent = judgment.verdict || 'No verdict provided'
+    }
+
+    // Update details (strengths/weaknesses)
+    const detailsEl = document.getElementById('judgment-details')
+    if (detailsEl) {
+        let html = ''
+        
+        if (judgment.strengths && judgment.strengths.length > 0) {
+            html += '<div class="judgment-section"><span class="judgment-section-title">✓ Strengths:</span><ul>'
+            judgment.strengths.forEach(s => {
+                html += `<li>${esc(s)}</li>`
+            })
+            html += '</ul></div>'
+        }
+        
+        if (judgment.weaknesses && judgment.weaknesses.length > 0) {
+            html += '<div class="judgment-section"><span class="judgment-section-title">⚠ Weaknesses:</span><ul>'
+            judgment.weaknesses.forEach(w => {
+                html += `<li>${esc(w)}</li>`
+            })
+            html += '</ul></div>'
+        }
+        
+        if (judgment.missing_keywords && judgment.missing_keywords.length > 0) {
+            html += '<div class="judgment-section"><span class="judgment-section-title">Missing Keywords:</span><div class="keyword-tags">'
+            judgment.missing_keywords.forEach(k => {
+                html += `<span class="keyword-tag">${esc(k)}</span>`
+            })
+            html += '</div></div>'
+        }
+        
+        detailsEl.innerHTML = html
+    }
+
+    // Show the card with animation
+    card.style.display = 'block'
+    card.classList.add('judgment-card--new')
+    setTimeout(() => card.classList.remove('judgment-card--new'), 500)
+}
+
+// ── Interview summary display ──────────────────────────────────────────────
+// Called when interview summary is updated after each judgment
+function _onInterviewSummaryUpdated(summary) {
+    // Cache the summary for use in history mode
+    currentSummary = summary
+    
+    // If we're currently viewing the summary, update it
+    if (historyMode && summaryViewMode) {
+        showSummaryView()
+    }
+}
+
+function showSummaryView() {
+    const txArea = document.getElementById('tx-area')
+    if (!txArea) return
+    
+    // Clear transcript area
+    txArea.innerHTML = ''
+    
+    if (!currentSummary || !currentSummary.questions || currentSummary.questions.length === 0) {
+        txArea.innerHTML = '<div class="summary-placeholder">No questions answered yet...</div>'
+        return
+    }
+    
+    // Create summary header
+    const answered = currentSummary.questions.filter(q => q.answer && q.answer !== '').length
+    const passed = currentSummary.questions.filter(q => q.judgment && q.judgment.pass).length
+    
+    const header = document.createElement('div')
+    header.className = 'summary-header'
+    header.innerHTML = `
+        <div class="summary-title">Interview Summary</div>
+        <div class="summary-stats">${answered} answered • ${passed} passed</div>
+    `
+    txArea.appendChild(header)
+    
+    // Render question summaries
+    const summaryList = document.createElement('div')
+    summaryList.className = 'summary-list'
+    
+    currentSummary.questions.forEach((qa, idx) => {
+        const hasAnswer = qa.answer && qa.answer !== ''
+        const hasJudgment = qa.judgment && qa.judgment.score !== undefined
+        
+        const item = document.createElement('div')
+        item.className = 'summary-item'
+        
+        let html = `<div class="summary-item-header">`
+        html += `<span class="summary-item-num">${idx + 1}</span>`
+        
+        if (hasJudgment) {
+            const passClass = qa.judgment.pass ? 'pass' : 'fail'
+            html += `<span class="summary-score summary-score--${passClass}">${qa.judgment.score}/100</span>`
+            html += `<span class="summary-badge summary-badge--${passClass}">${qa.judgment.pass ? 'PASS' : 'FAIL'}</span>`
+        } else if (hasAnswer) {
+            html += `<span class="summary-badge summary-badge--pending">Evaluating...</span>`
+        } else {
+            html += `<span class="summary-badge summary-badge--waiting">Waiting</span>`
+        }
+        
+        html += '</div>'
+        html += `<div class="summary-item-question">${esc(qa.question.question || '')}</div>`
+        
+        if (hasAnswer) {
+            html += `<div class="summary-item-answer">${esc(qa.answer.substring(0, 150))}${qa.answer.length > 150 ? '...' : ''}</div>`
+        }
+        
+        if (hasJudgment && qa.judgment.verdict) {
+            html += `<div class="summary-item-verdict">${esc(qa.judgment.verdict)}</div>`
+        }
+        
+        item.innerHTML = html
+        summaryList.appendChild(item)
+    })
+    
+    txArea.appendChild(summaryList)
+    txArea.scrollTop = txArea.scrollHeight
 }
 
 // ── Session start (start_session → active_session) ─────────────────────────
@@ -803,13 +972,44 @@ async function startSessionAndRecord() {
 function toggleHistoryMode() {
     historyMode = !historyMode
     const btn = document.getElementById('history-toggle')
+    const summaryBtn = document.getElementById('summary-toggle')
     const txArea = document.getElementById('tx-area')
+    
     if (historyMode) {
-        btn.textContent = '🔴 Live'; btn.classList.add('active')
-        txArea.classList.add('history-mode'); rebuildHistoryView()
+        btn.textContent = '🔴 Live'
+        btn.classList.add('active')
+        summaryBtn.style.display = 'inline-block'  // show summary toggle in history mode
+        txArea.classList.add('history-mode')
+        
+        // Start with conversation view by default
+        summaryViewMode = false
+        rebuildHistoryView()
     } else {
-        btn.textContent = '📜 History'; btn.classList.remove('active')
-        txArea.classList.remove('history-mode'); updateLiveDisplay()
+        btn.textContent = '📜 History'
+        btn.classList.remove('active')
+        summaryBtn.style.display = 'none'  // hide summary toggle in live mode
+        summaryBtn.classList.remove('active')
+        summaryViewMode = false
+        txArea.classList.remove('history-mode')
+        updateLiveDisplay()
+    }
+}
+
+function toggleSummaryView() {
+    if (!historyMode) return  // summary toggle only works in history mode
+    
+    summaryViewMode = !summaryViewMode
+    const btn = document.getElementById('summary-toggle')
+    const txArea = document.getElementById('tx-area')
+    
+    if (summaryViewMode) {
+        btn.textContent = '💬 Conversation'
+        btn.classList.add('active')
+        showSummaryView()
+    } else {
+        btn.textContent = '📊 Summary'
+        btn.classList.remove('active')
+        rebuildHistoryView()
     }
 }
 
@@ -863,9 +1063,33 @@ function inferNextQuestion() {
 }
 
 // ── UI helpers ─────────────────────────────────────────────────────────────
+// Ensure the transcript area has the correct structure for live/history modes
+function ensureTranscriptStructure() {
+    const area = document.getElementById('tx-area')
+    if (!area) return
+    
+    // Check if partial element exists, if not create it
+    let partial = document.getElementById('partial')
+    if (!partial) {
+        partial = document.createElement('div')
+        partial.id = 'partial'
+        partial.className = 'line'
+        partial.style.display = 'none'
+        partial.innerHTML = `
+            <span class="lbl mic" id="p-lbl">Mic</span>
+            <span class="tx partial" id="p-tx"></span>
+        `
+        area.appendChild(partial)
+    }
+}
+
 function updateLiveDisplay() {
     const area = document.getElementById('tx-area')
     if (!area) return
+    
+    // Ensure structure exists
+    ensureTranscriptStructure()
+    
     area.querySelectorAll('.line:not(#partial)').forEach(l => l.remove())
     const partial = document.getElementById('partial')
     if (currentPartial.text) {
@@ -882,6 +1106,10 @@ function updateLiveDisplay() {
 function rebuildHistoryView() {
     const area = document.getElementById('tx-area')
     if (!area) return
+    
+    // Ensure structure exists
+    ensureTranscriptStructure()
+    
     area.querySelectorAll('.line:not(#partial)').forEach(l => l.remove())
     transcriptHistory.forEach(item => addLineToHistory(item.label, item.text))
     if (currentPartial.text) {
@@ -945,7 +1173,10 @@ function appendUserBubble(prompt) {
         <div class="nqi-user-text">${escapeHtml(prompt)}</div>
     `
     messages.appendChild(bubble)
-    messages.scrollTop = messages.scrollHeight
+    
+    // Scroll the wrapper instead of messages
+    const wrapper = document.getElementById('nqi-scroll-wrapper')
+    if (wrapper) wrapper.scrollTop = wrapper.scrollHeight
 }
 
 // ── Device loader ──────────────────────────────────────────────────────────
@@ -1047,6 +1278,6 @@ function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').r
 Object.assign(window, {
     submitLogin, navigate, loadInterviewList,
     goToFind, goToSession, switchTab,
-    startSessionAndRecord, toggleRec, toggleHistoryMode,
+    startSessionAndRecord, toggleRec, toggleHistoryMode, toggleSummaryView,
     inferNextQuestion, loadAudioDevices,
 })

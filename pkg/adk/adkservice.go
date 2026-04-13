@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"tal_assistant/pkg/adk/judgingagent"
 	"tal_assistant/pkg/adk/nextquestionextender"
 	"tal_assistant/pkg/adk/nextquestionindicator"
 	"tal_assistant/pkg/adk/signalingagent"
@@ -38,6 +39,9 @@ type ADKServiceInterface interface {
 	NextQuestionIndicatorRun(req adkutils.AgentRunRequest) iter.Seq2[string, error]
 	NewNextQuestionExtenderState(req nextquestionextender.NextQuestionExtenderState) map[string]any
 	NextQuestionExtenderRun(req adkutils.AgentRunRequest) (adkutils.QuestionBankQuestion, error)
+	NewJudgingAgentState(req judgingagent.JudgingAgentState) map[string]any
+	JudgingAgentRun(req adkutils.AgentRunRequest) iter.Seq2[string, error]
+	SetJudgingAgentContext(ctx context.Context, sessionID string, userID string, interviewContext string) error
 	StartSession(ctx context.Context, userID string, questionBank []adkutils.QuestionBankQuestion) (InterviewSessions, error)
 	AppendQuestionToSessions(
 		ctx context.Context,
@@ -66,6 +70,8 @@ type ADKService struct {
 	nextQuestionIndicatorRunner   *runner.Runner
 	nextQuestionExtender          *nextquestionextender.NextQuestionExtender
 	nextQuestionExtenderRunner    *runner.Runner
+	judgingAgent                  *judgingagent.JudgingAgent
+	judgingAgentRunner            *runner.Runner
 }
 
 // NewADKService builds the service and wires up all agents.
@@ -144,6 +150,19 @@ func NewADKService(ctx context.Context, geminiApiKey string) (ADKServiceInterfac
 		return nil, fmt.Errorf("error creating runner for next question extender agent: %w", err)
 	}
 
+	// judging agent
+	judgingAgent := judgingagent.NewJudgingAgent(&geminiProModel)
+	judgingAgentConfig := judgingAgent.NewAgentConfig(geminiProModel)
+	judgingAgentRunner, err := NewAgentRunner(
+		ctx,
+		appName,
+		sessionService,
+		*judgingAgentConfig,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating runner for judging agent: %w", err)
+	}
+
 	return &ADKService{
 		sessionService:            sessionService,
 		geminiLiteModel:           geminiLiteModel,
@@ -158,6 +177,8 @@ func NewADKService(ctx context.Context, geminiApiKey string) (ADKServiceInterfac
 		nextQuestionIndicatorRunner: nextQIndicatorRunner,
 		nextQuestionExtender:        nextQExtender,
 		nextQuestionExtenderRunner:  nextQExtenderRunner,
+		judgingAgent:                judgingAgent,
+		judgingAgentRunner:          judgingAgentRunner,
 	}, nil
 }
 func (s *ADKService) SessionUpsert(

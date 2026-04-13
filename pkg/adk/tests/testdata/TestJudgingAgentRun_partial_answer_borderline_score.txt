@@ -1,0 +1,62 @@
+────────────────────────────────────────
+test      : TestJudgingAgentRun/partial_answer_borderline_score
+timestamp : 2026-04-13T11:01:26+02:00
+session   : TestJudgingAgentRun_1776070831936
+input     : Q: Explain the Python GIL and its impact on multi-threaded programs.
+A: The GIL is something in Python that affects threading. It makes multi-threaded programs slower because only one thread can run at a time.
+output    : {
+  "score": 20,
+  "pass": false,
+  "strengths": [
+    "Identified the basic limitation that the GIL restricts execution to one thread at a time."
+  ],
+  "weaknesses": [
+    "Lacks the technical depth expected from a Senior Software Engineer.",
+    "Failed to identify that the GIL is specific to CPython and protects memory management/reference counting.",
+    "Did not distinguish between the impact on CPU-bound versus I/O-bound tasks.",
+    "Failed to mention workarounds or alternatives like the multiprocessing module."
+  ],
+  "missing_keywords": [
+    "CPython",
+    "Mutex",
+    "Bytecode",
+    "CPU-bound",
+    "I/O-bound",
+    "Reference counting",
+    "Memory management",
+    "Multiprocessing"
+  ],
+  "verdict": "The candidate provided a highly superficial answer that lacks the technical detail and nuance expected of a senior Python engineer, failing to explain the mechanism, context, or implications fully."
+}
+
+────────────────────────────────────────
+test      : TestJudgingAgentRun/partial_answer_borderline_score
+timestamp : 2026-04-13T13:54:58+02:00
+session   : TestJudgingAgentRun_1776081238713
+input     : Q: Explain the Python GIL and its impact on multi-threaded programs.
+A: The GIL is something in Python that affects threading. It makes multi-threaded programs slower because only one thread can run at a time.
+output    : {
+  "score": 25,
+  "pass": false,
+  "strengths": [
+    "Correctly identified that the GIL restricts threads to running one at a time"
+  ],
+  "weaknesses": [
+    "Extremely superficial explanation, failing to define the GIL as a mutex specific to CPython",
+    "Missed the critical distinction between CPU-bound tasks (which are bottlenecked) and I/O-bound tasks (which still benefit from threading)",
+    "Failed to explain why the GIL exists (to protect reference counts and memory management)",
+    "Did not mention any workarounds, such as using the multiprocessing module",
+    "Lacks the technical depth expected from a Senior Software Engineer"
+  ],
+  "missing_keywords": [
+    "Mutex",
+    "CPython",
+    "CPU-bound",
+    "I/O-bound",
+    "Multiprocessing",
+    "Reference counting",
+    "Memory management"
+  ],
+  "verdict": "The candidate provided an overly simplistic answer that completely lacks the technical depth, accuracy, and nuance expected of a Senior Python Engineer."
+}
+

@@ -1,0 +1,54 @@
+────────────────────────────────────────
+test      : TestJudgingAgentMultipleQAPairs/qa_pair_A
+timestamp : 2026-04-13T11:01:43+02:00
+session   : TestJudgingAgentMultipleQAPairs_1776070886608
+input     : Q: Explain the difference between let, const, and var in JavaScript.
+A: var is function-scoped and hoisted, while let and const are block-scoped. const creates a read-only reference, meaning you can't reassign it, but the value itself can be mutable if it's an object or array. let allows reassignment.
+output    : {
+  "score": 85,
+  "pass": true,
+  "strengths": [
+    "Correctly identified function vs. block scoping",
+    "Accurately explained that const prevents reassignment but does not make objects/arrays immutable",
+    "Clear, concise, and to the point"
+  ],
+  "weaknesses": [
+    "Omitted mention of the Temporal Dead Zone (TDZ) for let and const",
+    "Did not mention that var allows redeclaration within the same scope while let and const do not",
+    "Missed the detail about var attaching to the global window object while let/const do not"
+  ],
+  "missing_keywords": [
+    "Temporal Dead Zone",
+    "TDZ",
+    "Redeclaration",
+    "Global object"
+  ],
+  "verdict": "The candidate provided a solid and highly practical explanation covering scope and mutability rules, though they missed some deeper nuances like the Temporal Dead Zone and redeclaration rules."
+}
+
+────────────────────────────────────────
+test      : TestJudgingAgentMultipleQAPairs/qa_pair_A
+timestamp : 2026-04-13T13:55:15+02:00
+session   : TestJudgingAgentMultipleQAPairs_1776081298472
+input     : Q: Explain the difference between let, const, and var in JavaScript.
+A: var is function-scoped and hoisted, while let and const are block-scoped. const creates a read-only reference, meaning you can't reassign it, but the value itself can be mutable if it's an object or array. let allows reassignment.
+output    : {
+  "score": 90,
+  "pass": true,
+  "strengths": [
+    "Correctly identifies the scope differences between var (function-scoped) and let/const (block-scoped).",
+    "Accurately explains that const prevents reassignment but allows mutation of object/array properties.",
+    "Clear, concise, and technically accurate delivery."
+  ],
+  "weaknesses": [
+    "Did not mention the Temporal Dead Zone (TDZ) which applies to let and const.",
+    "Omitted the difference in global object property attachment (var attaches to the global/window object, let/const do not)."
+  ],
+  "missing_keywords": [
+    "Temporal Dead Zone",
+    "TDZ",
+    "Global object"
+  ],
+  "verdict": "The candidate provided a strong, accurate, and concise explanation of variable declarations, demonstrating excellent foundational knowledge of ES6+ JavaScript, missing only deeper nuance regarding the Temporal Dead Zone."
+}
+

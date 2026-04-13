@@ -24,8 +24,19 @@ type QuestionAnswer struct {
 	Question            adkutils.QuestionBankQuestion `json:"question"`
 	TranscribedQuestion string                        `json:"transcribed_question"`
 	Answer              string                        `json:"answer"`
+	Judgment            *Judgment                     `json:"judgment,omitempty"`
 	Order               int                           `json:"order"`
 	FollowupQuestion    *QuestionAnswer               `json:"followup_question,omitempty"`
+}
+
+// Judgment holds the evaluation result from the judging agent
+type Judgment struct {
+	Score            int      `json:"score"`
+	Pass             bool     `json:"pass"`
+	Strengths        []string `json:"strengths"`
+	Weaknesses       []string `json:"weaknesses"`
+	MissingKeywords  []string `json:"missing_keywords"`
+	Verdict          string   `json:"verdict"`
 }
 
 // InterviewSummary is the full ordered Q&A history stored for an interview.
@@ -60,6 +71,7 @@ type RedisCacheInterface interface {
 	InitInterviewSummary(ctx context.Context, interviewID string, questions []adkutils.QuestionBankQuestion) error
 	SaveTranscribedQuestion(ctx context.Context, interviewID string, questionID string, transcribedQuestion string) error
 	SaveAnswer(ctx context.Context, interviewID string, questionID string, answer string) error
+	SaveJudgment(ctx context.Context, interviewID string, questionID string, judgment *Judgment) error
 	InsertFollowUpQuestion(ctx context.Context, interviewID string, parentQuestionID string, followUp adkutils.QuestionBankQuestion) error
 	SaveChangeQuestion(ctx context.Context, interviewID string, question adkutils.QuestionBankQuestion) error
 	FindInterviewSummary(ctx context.Context, interviewID string) (*InterviewSummary, error)
@@ -305,6 +317,25 @@ func (c *RedisCacheClient) SaveAnswer(
 		return fmt.Errorf("question %s not found in summary for interview %s", questionID, interviewID)
 	}
 	node.Answer = answer
+	return c.saveSummary(ctx, summary)
+}
+
+// SaveJudgment stores the evaluation judgment for a question's answer.
+func (c *RedisCacheClient) SaveJudgment(
+	ctx context.Context,
+	interviewID string,
+	questionID string,
+	judgment *Judgment,
+) error {
+	summary, err := c.loadSummary(ctx, interviewID)
+	if err != nil {
+		return err
+	}
+	node := findNode(summary.Questions, questionID)
+	if node == nil {
+		return fmt.Errorf("question %s not found in summary for interview %s", questionID, interviewID)
+	}
+	node.Judgment = judgment
 	return c.saveSummary(ctx, summary)
 }
 

@@ -202,6 +202,7 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 		MapperSessionID:    event.MapperSessionID,
 		IndicatorSessionID: event.IndicatorSessionID,
 		ExtenderSessionID:  event.ExtenderSessionID,
+		JudgingSessionID:   event.JudgingSessionID,
 	}); err != nil {
 		log.Printf("[orchestrator] [%s] publish signal_mapped failed: %v", event.InterviewID, err)
 	}
@@ -242,6 +243,22 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 			// Consume and discard any response (agent should not respond to questions)
 		}
 		log.Printf("[orchestrator] [%s] current question sent to NQI session", event.InterviewID)
+
+		// Send question to Judging Agent (no response expected)
+		judgingPrompt := fmt.Sprintf("Q: %s", text)
+		for _, err := range s.adkSvc.JudgingAgentRun(adkutils.AgentRunRequest{
+			Ctx:       ctx,
+			SessionID: event.JudgingSessionID,
+			UserID:    event.UserID,
+			Prompt:    judgingPrompt,
+		}) {
+			if err != nil {
+				log.Printf("[orchestrator] [%s] judging agent question send failed: %v", event.InterviewID, err)
+				return
+			}
+			// Consume and discard any response (agent should not respond to questions)
+		}
+		log.Printf("[orchestrator] [%s] question sent to judging agent session", event.InterviewID)
 		return
 
 	case strings.HasPrefix(event.Signal, "A:"):
@@ -299,6 +316,71 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		log.Printf("[orchestrator] [%s] save NQI response failed: %v", event.InterviewID, err)
 	}
 
+	// ── Judging Agent: Evaluate the Q&A pair ──────────────────────────────
+	// Send answer to Judging Agent and collect JSON judgment
+	judgingPrompt := fmt.Sprintf("A: %s", answerText)
+	var judgingSb strings.Builder
+	for chunk, err := range s.adkSvc.JudgingAgentRun(adkutils.AgentRunRequest{
+		Ctx:       ctx,
+		SessionID: event.JudgingSessionID,
+		UserID:    event.UserID,
+		Prompt:    judgingPrompt,
+	}) {
+		if err != nil {
+			log.Printf("[orchestrator] [%s] judging agent run failed: %v", event.InterviewID, err)
+			break
+		}
+		// Handle deduplication: ADK SDK sends incremental chunks then a final full chunk
+		if judgingSb.Len() > 0 && chunk == judgingSb.String() {
+			log.Printf("[orchestrator] [%s] judging agent dedup: suppressed final re-emission (len=%d)", event.InterviewID, len(chunk))
+			break
+		}
+		judgingSb.WriteString(chunk)
+	}
+	judgmentJSON := strings.TrimSpace(judgingSb.String())
+
+	// Parse and save the judgment
+	if judgmentJSON != "" {
+		var judgment Judgment
+		if err := json.Unmarshal([]byte(judgmentJSON), &judgment); err != nil {
+			log.Printf("[orchestrator] [%s] parse judging agent JSON failed: %v\nJSON: %s", event.InterviewID, err, judgmentJSON)
+		} else {
+			if err := s.cache.SaveJudgment(ctx, event.InterviewID, event.QuestionID, &judgment); err != nil {
+				log.Printf("[orchestrator] [%s] save judgment failed: %v", event.InterviewID, err)
+			} else {
+				passStatus := "FAIL"
+				if judgment.Pass {
+					passStatus = "PASS"
+				}
+				log.Printf("[orchestrator] [%s] judgment saved — question=%s score=%d/%d %s verdict=%q",
+					event.InterviewID, event.QuestionID, judgment.Score, 100, passStatus, judgment.Verdict)
+
+				// Emit judgment to UI for real-time feedback
+				s.emitToUi("judgment_received", map[string]interface{}{
+					"question_id": event.QuestionID,
+					"judgment":    judgment,
+				})
+
+				// Fetch and emit updated interview summary to UI
+				if summary, err := s.cache.FindInterviewSummary(ctx, event.InterviewID); err != nil {
+					log.Printf("[orchestrator] [%s] fetch interview summary for UI failed: %v", event.InterviewID, err)
+				} else {
+					s.emitToUi("interview_summary_updated", summary)
+					log.Printf("[orchestrator] [%s] interview summary emitted to UI — questions=%d", event.InterviewID, len(summary.Questions))
+				}
+			}
+
+			// Save the judgment as an agent response for audit trail
+			if err := s.cache.SaveAgentResponse(ctx, event.InterviewID, AgentResponse{
+				Agent:  "judging_agent",
+				Input:  event.QAndA,
+				Output: judgmentJSON,
+			}); err != nil {
+				log.Printf("[orchestrator] [%s] save judging agent response failed: %v", event.InterviewID, err)
+			}
+		}
+	}
+
 	if err := s.publisher.PublishNextQuestionIndicated(ctx, NextQuestionIndicatedEvent{
 		InterviewID:        event.InterviewID,
 		UserID:             event.UserID,
@@ -308,6 +390,7 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		MapperSessionID:    event.MapperSessionID,
 		IndicatorSessionID: event.IndicatorSessionID,
 		ExtenderSessionID:  event.ExtenderSessionID,
+		JudgingSessionID:   event.JudgingSessionID,
 	}); err != nil {
 		log.Printf("[orchestrator] [%s] publish next_question_indicated failed: %v", event.InterviewID, err)
 	}
@@ -364,6 +447,7 @@ func (s *OrchestrationSubscriber) handleNextQuestionIndicated(ctx context.Contex
 		SignalingSessionID: event.SignalingSessionID,
 		MapperSessionID:    event.MapperSessionID,
 		IndicatorSessionID: event.IndicatorSessionID,
+		JudgingSessionID:   event.JudgingSessionID,
 	}); err != nil {
 		log.Printf("[orchestrator] [%s] publish next_question_extended failed: %v", event.InterviewID, err)
 	}

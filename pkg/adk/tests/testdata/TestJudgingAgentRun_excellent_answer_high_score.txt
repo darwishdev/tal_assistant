@@ -1,0 +1,61 @@
+────────────────────────────────────────
+test      : TestJudgingAgentRun/excellent_answer_high_score
+timestamp : 2026-04-13T11:00:49+02:00
+session   : TestJudgingAgentRun_1776070831936
+input     : Q: Design a real-time interview assistant system that processes live audio, extracts Q&A pairs, and surfaces tips to the recruiter with under 2 seconds of latency. Walk me through the architecture.
+A: I'd use a WebSocket connection for real-time audio streaming from the client. Audio chunks go through a VAD (Voice Activity Detection) module to detect speech boundaries, then get sent to a streaming transcription service like Deepgram or AssemblyAI. Transcripts are pushed onto a Redis message queue. A consumer picks them up, calls an LLM inference service for tip generation — we'd optimize LLM calls to stay within a 500ms latency budget using techniques like batching and caching. The results are pushed back over WebSocket to the recruiter UI. The whole pipeline is event-driven to keep end-to-end latency under 2 seconds. For reliability, I'd implement circuit breakers and fallback mechanisms.
+output    : {
+  "score": 80,
+  "pass": true,
+  "strengths": [
+    "Appropriate choice of communication protocols (WebSocket) for low-latency bi-directional data flow.",
+    "Included Voice Activity Detection (VAD) to optimize processing and reduce costs.",
+    "Identified industry-standard real-time transcription services (Deepgram/AssemblyAI).",
+    "Explicitly addressed the latency budget (500ms for LLM) and overall event-driven flow."
+  ],
+  "weaknesses": [
+    "Missed the critical requirement of 'Speaker Diarization' needed to distinguish between the interviewer and candidate for accurate Q&A extraction.",
+    "Did not explain how interview context or state (memory) is maintained across multiple LLM calls.",
+    "Mentioned 'batching' to reduce latency, which can actually introduce latency if not specifically referring to continuous batching architectures like vLLM."
+  ],
+  "missing_keywords": [
+    "Speaker Diarization",
+    "Context Management",
+    "Session State",
+    "Continuous Batching",
+    "vLLM"
+  ],
+  "verdict": "The candidate presented a strong, practical event-driven architecture that effectively tackles the latency constraints, though they overlooked speaker diarization and session context management needed for full Q&A feature functionality."
+}
+
+────────────────────────────────────────
+test      : TestJudgingAgentRun/excellent_answer_high_score
+timestamp : 2026-04-13T13:54:19+02:00
+session   : TestJudgingAgentRun_1776081238713
+input     : Q: Design a real-time interview assistant system that processes live audio, extracts Q&A pairs, and surfaces tips to the recruiter with under 2 seconds of latency. Walk me through the architecture.
+A: I'd use a WebSocket connection for real-time audio streaming from the client. Audio chunks go through a VAD (Voice Activity Detection) module to detect speech boundaries, then get sent to a streaming transcription service like Deepgram or AssemblyAI. Transcripts are pushed onto a Redis message queue. A consumer picks them up, calls an LLM inference service for tip generation — we'd optimize LLM calls to stay within a 500ms latency budget using techniques like batching and caching. The results are pushed back over WebSocket to the recruiter UI. The whole pipeline is event-driven to keep end-to-end latency under 2 seconds. For reliability, I'd implement circuit breakers and fallback mechanisms.
+output    : {
+  "score": 80,
+  "pass": true,
+  "strengths": [
+    "Appropriate use of WebSockets for bidirectional low-latency streaming",
+    "Inclusion of VAD (Voice Activity Detection) to optimize audio processing",
+    "Identification of LLM latency as a bottleneck with specific mitigation strategies",
+    "Solid event-driven microservices design using Redis"
+  ],
+  "weaknesses": [
+    "Failed to mention Speaker Diarization, which is critical for identifying and separating Q&A pairs",
+    "Did not explain how conversation state/context is maintained across multiple LLM calls",
+    "Omitted persistent storage mechanisms for transcripts and extracted data",
+    "LLM batching might negatively impact the <2s latency constraint if not implemented carefully"
+  ],
+  "missing_keywords": [
+    "Speaker Diarization",
+    "Context Management",
+    "Persistent Storage",
+    "PostgreSQL",
+    "Stateful Streaming"
+  ],
+  "verdict": "The candidate provided a solid real-time streaming architecture but missed crucial domain-specific details like speaker diarization and conversation state management needed for accurate Q&A extraction."
+}
+

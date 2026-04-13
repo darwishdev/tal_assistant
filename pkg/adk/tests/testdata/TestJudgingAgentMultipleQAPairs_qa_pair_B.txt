@@ -1,0 +1,56 @@
+────────────────────────────────────────
+test      : TestJudgingAgentMultipleQAPairs/qa_pair_B
+timestamp : 2026-04-13T11:01:57+02:00
+session   : TestJudgingAgentMultipleQAPairs_1776070886608
+input     : Q: What are React hooks and why were they introduced?
+A: Hooks let you use state and other React features in functional components. They were introduced to avoid the complexity of class components and make it easier to reuse stateful logic between components. Common hooks include useState, useEffect, and useContext.
+output    : {
+  "score": 85,
+  "pass": true,
+  "strengths": [
+    "Correctly defined the primary purpose of Hooks as enabling state in functional components",
+    "Accurately identified the motivation behind them, such as reducing class component complexity and enabling stateful logic reuse",
+    "Provided accurate and relevant examples of common hooks"
+  ],
+  "weaknesses": [
+    "Did not explicitly mention 'Custom Hooks' as the specific mechanism for reusing stateful logic",
+    "Could have elaborated on specific class component pain points, such as 'this' binding confusion or lifecycle method fragmentation",
+    "Missed mentioning the reduction of 'wrapper hell' (HOCs and render props)"
+  ],
+  "missing_keywords": [
+    "Custom Hooks",
+    "Lifecycle methods",
+    "this binding",
+    "Higher Order Components (HOC)",
+    "Wrapper hell"
+  ],
+  "verdict": "The candidate provided a clear and accurate high-level summary of React hooks and their purpose, demonstrating solid practical understanding, though missing some deeper technical context regarding lifecycle fragmentation and custom hooks."
+}
+
+────────────────────────────────────────
+test      : TestJudgingAgentMultipleQAPairs/qa_pair_B
+timestamp : 2026-04-13T13:55:33+02:00
+session   : TestJudgingAgentMultipleQAPairs_1776081298472
+input     : Q: What are React hooks and why were they introduced?
+A: Hooks let you use state and other React features in functional components. They were introduced to avoid the complexity of class components and make it easier to reuse stateful logic between components. Common hooks include useState, useEffect, and useContext.
+output    : {
+  "score": 85,
+  "pass": true,
+  "strengths": [
+    "Accurately defines the core purpose of React Hooks.",
+    "Correctly identifies key motivations for their introduction, such as avoiding class component complexity and enabling stateful logic reuse.",
+    "Provides accurate examples of commonly used hooks."
+  ],
+  "weaknesses": [
+    "Does not explicitly mention 'Custom Hooks' as the specific mechanism for sharing stateful logic.",
+    "Missed the opportunity to mention specific class component pain points solved by hooks, such as 'this' keyword binding, complex lifecycle methods, or wrapper hell (HOCs/Render Props)."
+  ],
+  "missing_keywords": [
+    "Custom Hooks",
+    "Higher-Order Components (HOC)",
+    "this keyword",
+    "lifecycle methods"
+  ],
+  "verdict": "The candidate provided a solid and concise overview of React Hooks and their primary motivations, showing good foundational understanding, though lacking deeper elaboration on class component pain points."
+}
+

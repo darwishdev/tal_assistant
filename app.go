@@ -153,11 +153,12 @@ func (a *App) StartSession(userID string, questionBank []adkutils.QuestionBankQu
 	}
 	a.sessions = &sessions
 
-	log.Printf("[session] ADK sessions created — signaling=%s mapper=%s nqi=%s nqe=%s",
+	log.Printf("[session] ADK sessions created — signaling=%s mapper=%s nqi=%s nqe=%s judging=%s",
 		sessions.SignalingAgentSessionID,
 		sessions.SignalingAgentMapperSessionID,
 		sessions.NextQuestionIndicatorSessionID,
 		sessions.NextQuestionExtenderSessionID,
+		sessions.JudgingAgentSessionID,
 	)
 
 	if len(questionBank) > 0 {
@@ -252,6 +253,7 @@ func (a *App) processSigQueue() {
 			MapperSessionID:    a.sessions.SignalingAgentMapperSessionID,
 			IndicatorSessionID: a.sessions.NextQuestionIndicatorSessionID,
 			ExtenderSessionID:  a.sessions.NextQuestionExtenderSessionID,
+			JudgingSessionID:   a.sessions.JudgingAgentSessionID,
 		}
 		if err := a.redisPublisher.PublishSignalDetected(a.ctx, event); err != nil {
 			a.logAndEmitError(fmt.Sprintf("publish signal_detected: %v", err))
@@ -580,9 +582,71 @@ func (a *App) ATSBeginSession(interviewName string) string {
 		return result
 	}
 
+	// Build interview context for judging agent
+	interviewContext := fmt.Sprintf(`# Interview Context
+
+## Candidate
+- Name: %s
+- Email: %s
+- Designation: %s
+- Skills: %s
+
+## Job Position
+- Title: %s
+- Department: %s
+- Location: %s
+
+## Interview Round
+- Type: %s
+- Round: %s
+- Expected Average Rating: %.2f
+
+## Expected Skills
+%s
+`,
+		interview.Candidate.Name,
+		interview.Candidate.Email,
+		safeString(interview.Candidate.Designation),
+		strings.Join(interview.Candidate.Skills, ", "),
+		interview.Job.Title,
+		interview.Job.Department,
+		interview.Job.Location,
+		interview.Round.Type,
+		interview.Round.Name,
+		interview.Round.ExpectedAverageRating,
+		formatExpectedSkills(interview.Round.ExpectedSkills),
+	)
+
+	// Update judging agent session with interview context
+	if err := a.adkService.SetJudgingAgentContext(a.ctx, a.sessions.JudgingAgentSessionID, userID, interviewContext); err != nil {
+		log.Printf("[session] WARNING: SetJudgingAgentContext: %v", err)
+	} else {
+		log.Printf("[session] judging agent context set — interview=%s", a.interviewID)
+	}
+
 	log.Printf("[session] ready — interview=%s user=%s questions=%d",
 		a.interviewID, a.userID, len(questions))
 	return "ok"
+}
+
+// safeString returns the string value if not nil, otherwise empty string
+func safeString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// formatExpectedSkills formats expected skills as a bulleted list
+func formatExpectedSkills(skills []atsclient.ExpectedSkill) string {
+	if len(skills) == 0 {
+		return "None specified"
+	}
+	var builder strings.Builder
+	for _, skill := range skills {
+		builder.WriteString(fmt.Sprintf("- %s: %s\n", skill.Skill, skill.Description))
+	}
+	return strings.TrimSpace(builder.String())
 }
 
 // atsQuestionsToADK converts ATS question structs to the adkutils format expected

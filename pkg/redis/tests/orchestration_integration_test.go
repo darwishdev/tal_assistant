@@ -231,6 +231,7 @@ func TestOrchestratorIntegration(t *testing.T) {
 			MapperSessionID:    sessions.SignalingAgentMapperSessionID,
 			IndicatorSessionID: sessions.NextQuestionIndicatorSessionID,
 			ExtenderSessionID:  sessions.NextQuestionExtenderSessionID,
+			JudgingSessionID:   sessions.JudgingAgentSessionID,
 		}); err != nil {
 			t.Fatalf("PublishSignalDetected turn %d: %v", i+1, err)
 		}
