@@ -2,6 +2,8 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"tal_assistant/pkg/adk/nextquestionindicator"
 	"tal_assistant/pkg/adkutils"
@@ -58,41 +60,52 @@ func TestNextQuestionIndicatorRun(t *testing.T) {
 	cases := []struct {
 		name            string
 		currentQuestion adkutils.QuestionBankQuestion
-		qanda           string
+		answer          string
 	}{
 		{
 			name:            "strong_answer_triggers_next_question",
 			currentQuestion: testQuestion1,
-			qanda: `Q: Design a real-time interview assistant system that processes live audio, extracts Q&A pairs, and surfaces tips to the recruiter with under 2 seconds of latency. Walk me through the architecture.
-A: I'd use a WebSocket connection for real-time audio streaming from the client. Audio chunks go through a VAD (Voice Activity Detection) module to detect speech boundaries, then get sent to a streaming transcription service. Transcripts are pushed onto a Redis message queue. A consumer picks them up, calls an LLM inference service for tip generation — we'd optimize LLM calls to stay within a 500ms latency budget — and the results are pushed back over WebSocket to the recruiter UI. The whole pipeline is event-driven to keep end-to-end latency under 2 seconds.`,
+			answer:          `I'd use a WebSocket connection for real-time audio streaming from the client. Audio chunks go through a VAD (Voice Activity Detection) module to detect speech boundaries, then get sent to a streaming transcription service. Transcripts are pushed onto a Redis message queue. A consumer picks them up, calls an LLM inference service for tip generation — we'd optimize LLM calls to stay within a 500ms latency budget — and the results are pushed back over WebSocket to the recruiter UI. The whole pipeline is event-driven to keep end-to-end latency under 2 seconds.`,
 		},
 		{
 			name:            "weak_answer_no_action",
 			currentQuestion: testQuestion1,
-			qanda: `Q: Design a real-time interview assistant system.
-A: I would use a microphone and send the audio to a server somehow.`,
+			answer:          `I would use a microphone and send the audio to a server somehow.`,
 		},
 		{
 			name:            "answer_mentions_websocket_triggers_followup",
 			currentQuestion: testQuestion1,
-			qanda: `Q: Design a real-time interview assistant system.
-A: I'd use a WebSocket to stream audio from the browser to the backend, then process it there.`,
+			answer:          `I'd use a WebSocket to stream audio from the browser to the backend, then process it there.`,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := adkutils.AgentRunRequest{
+			// Step 1: Send current question (agent should not respond)
+			questionJSON, _ := json.MarshalIndent(tc.currentQuestion, "", "  ")
+			questionPrompt := fmt.Sprintf("Current Question Entity:\n%s", string(questionJSON))
+			
+			for _, err := range svc.NextQuestionIndicatorRun(adkutils.AgentRunRequest{
 				Ctx:       ctx,
 				SessionID: id,
 				UserID:    testUserName,
-				Prompt: nextquestionindicator.NextQuestionIndicatorInput{
-					CurrentQuestion: tc.currentQuestion,
-					QAndA:           tc.qanda,
-				},
+				Prompt:    questionPrompt,
+			}) {
+				if err != nil {
+					t.Fatalf("error sending question: %v", err)
+				}
+				// Consume and discard any output (agent should not respond)
 			}
+			
+			// Step 2: Send candidate's answer (agent should respond with decision)
+			answerPrompt := fmt.Sprintf("Candidate's Answer:\n%s", tc.answer)
 			var sb strings.Builder
-			for chunk, err := range svc.NextQuestionIndicatorRun(req) {
+			for chunk, err := range svc.NextQuestionIndicatorRun(adkutils.AgentRunRequest{
+				Ctx:       ctx,
+				SessionID: id,
+				UserID:    testUserName,
+				Prompt:    answerPrompt,
+			}) {
 				if err != nil {
 					t.Errorf("NextQuestionIndicatorRun: %v", err)
 					break
@@ -100,7 +113,10 @@ A: I'd use a WebSocket to stream audio from the browser to the backend, then pro
 				sb.WriteString(chunk)
 			}
 			output := strings.TrimSpace(sb.String())
-			writeRecord(t, id, tc.qanda, output)
+			
+			// Record the full Q&A exchange and the decision
+			input := fmt.Sprintf("Q: %s\nA: %s", tc.currentQuestion.Question, tc.answer)
+			writeRecord(t, id, input, output)
 
 			valid := output == "None" ||
 				strings.HasPrefix(output, "F:") ||

@@ -3,12 +3,12 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strings"
 	"tal_assistant/pkg/adk"
 	"tal_assistant/pkg/adk/nextquestionextender"
-	"tal_assistant/pkg/adk/nextquestionindicator"
 	"tal_assistant/pkg/adkutils"
 
 	"github.com/redis/go-redis/v9"
@@ -210,35 +210,63 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 // handleSignalMapped persists the transcribed question or answer, updates the current question
 // pointer, then calls NQI and publishes next_question_indicated.
 func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event SignalMappedEvent) {
-	// persist transcribed question or answer based on signal type
-	switch {
-	case strings.HasPrefix(event.Signal, "Q:"):
-		text := strings.TrimSpace(strings.TrimPrefix(event.Signal, "Q:"))
-		if err := s.cache.SaveTranscribedQuestion(ctx, event.InterviewID, event.QuestionID, text); err != nil {
-			log.Printf("[orchestrator] [%s] save transcribed question failed: %v", event.InterviewID, err)
-		}
-	case strings.HasPrefix(event.Signal, "A:"):
-		text := strings.TrimSpace(strings.TrimPrefix(event.Signal, "A:"))
-		if err := s.cache.SaveAnswer(ctx, event.InterviewID, event.QuestionID, text); err != nil {
-			log.Printf("[orchestrator] [%s] save answer failed: %v", event.InterviewID, err)
-		}
-	}
-
 	currentQuestion, err := s.cache.FindQuestionByID(ctx, event.InterviewID, event.QuestionID)
 	if err != nil {
 		log.Printf("[orchestrator] [%s] question %s not found in bank: %v", event.InterviewID, event.QuestionID, err)
 		return
 	}
 
+	// Handle signal based on type
+	switch {
+	case strings.HasPrefix(event.Signal, "Q:"):
+		// Question signal: persist transcribed question and send it to NQI (agent should not respond)
+		text := strings.TrimSpace(strings.TrimPrefix(event.Signal, "Q:"))
+		if err := s.cache.SaveTranscribedQuestion(ctx, event.InterviewID, event.QuestionID, text); err != nil {
+			log.Printf("[orchestrator] [%s] save transcribed question failed: %v", event.InterviewID, err)
+		}
+
+		// Send current question to NQI (no response expected)
+		questionJSON, _ := json.MarshalIndent(currentQuestion, "", "  ")
+		prompt := fmt.Sprintf("Current Question Entity:\n%s", string(questionJSON))
+		
+		for _, err := range s.adkSvc.NextQuestionIndicatorRun(adkutils.AgentRunRequest{
+			Ctx:       ctx,
+			SessionID: event.IndicatorSessionID,
+			UserID:    event.UserID,
+			Prompt:    prompt,
+		}) {
+			if err != nil {
+				log.Printf("[orchestrator] [%s] NQI question send failed: %v", event.InterviewID, err)
+				return
+			}
+			// Consume and discard any response (agent should not respond to questions)
+		}
+		log.Printf("[orchestrator] [%s] current question sent to NQI session", event.InterviewID)
+		return
+
+	case strings.HasPrefix(event.Signal, "A:"):
+		// Answer signal: persist answer and send it to NQI (agent should respond with decision)
+		text := strings.TrimSpace(strings.TrimPrefix(event.Signal, "A:"))
+		if err := s.cache.SaveAnswer(ctx, event.InterviewID, event.QuestionID, text); err != nil {
+			log.Printf("[orchestrator] [%s] save answer failed: %v", event.InterviewID, err)
+		}
+	}
+
+	// Only process NQI decision when we have an answer signal
+	if !strings.HasPrefix(event.Signal, "A:") {
+		return
+	}
+
+	// Send answer to NQI and collect the decision
+	answerText := strings.TrimSpace(strings.TrimPrefix(event.Signal, "A:"))
+	prompt := fmt.Sprintf("Candidate's Answer:\n%s", answerText)
+
 	var sb strings.Builder
 	for chunk, err := range s.adkSvc.NextQuestionIndicatorRun(adkutils.AgentRunRequest{
 		Ctx:       ctx,
 		SessionID: event.IndicatorSessionID,
 		UserID:    event.UserID,
-		Prompt: nextquestionindicator.NextQuestionIndicatorInput{
-			CurrentQuestion: *currentQuestion,
-			QAndA:           event.QAndA,
-		},
+		Prompt:    prompt,
 	}) {
 		if err != nil {
 			log.Printf("[orchestrator] [%s] NQI run failed: %v", event.InterviewID, err)

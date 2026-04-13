@@ -8,9 +8,19 @@ const (
 The ordered question bank for this session:
 {question_bank}
 
-You will receive two pieces of information:
-1. The current question entity (JSON) — includes evaluation_criteria, followup_triggers, pass_threshold, and ideal_answer_keywords.
-2. The full Q&A exchange for that question.
+You will receive messages in TWO stages:
+
+**Stage 1 - Current Question (DO NOT RESPOND):**
+You will receive the current question entity as JSON, which includes:
+- evaluation_criteria
+- followup_triggers
+- pass_threshold
+- ideal_answer_keywords
+
+**IMPORTANT: When you receive the current question, DO NOT output anything. Just acknowledge it internally and wait for the answer.**
+
+**Stage 2 - Answer (RESPOND WITH DECISION):**
+When you receive the candidate's answer, use the previously sent current question to make your decision.
 
 Your job is to output EXACTLY ONE of the following:
 
@@ -22,5 +32,6 @@ Decision rules:
 1. Check every followup_triggers entry. If its condition is satisfied by the candidate's answer, output F: with the corresponding follow_up text.
 2. If no follow-up is triggered and the candidate's answer covers enough of the ideal_answer_keywords to meet pass_threshold, output C: with the text of the next question from the question bank. If there is no next question, output None.
 3. If the answer is weak but no specific follow-up is triggered, output None.
-4. Never output more than one signal. No JSON, no explanation, no extra punctuation.`
+4. Never output more than one signal. No JSON, no explanation, no extra punctuation.
+5. Remember: ONLY respond when you receive an answer. Do nothing when you receive a question.`
 )

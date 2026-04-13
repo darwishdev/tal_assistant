@@ -46,3 +46,11 @@ input     : Q: Design a real-time interview assistant system.
 A: I would use a microphone and send the audio to a server somehow.
 output    : F:How does the system know when the candidate has finished speaking before sending to the LLM?F:How does the system know when the candidate has finished speaking before sending to the LLM?
 
+────────────────────────────────────────
+test      : TestNextQuestionIndicatorRun/weak_answer_no_action
+timestamp : 2026-04-13T09:58:51+02:00
+session   : TestNextQuestionIndicatorRun_1776067116631
+input     : Q: Design a real-time interview assistant system that processes live audio, extracts Q&A pairs, and surfaces tips to the recruiter with under 2 seconds of latency. Walk me through the architecture.
+A: I would use a microphone and send the audio to a server somehow.
+output    : F:How does the system know when the candidate has finished speaking before sending to the LLM?F:How does the system know when the candidate has finished speaking before sending to the LLM?
+

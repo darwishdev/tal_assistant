@@ -1,7 +1,6 @@
 package nextquestionindicator
 
 import (
-	"encoding/json"
 	"fmt"
 	"iter"
 	"tal_assistant/pkg/adkutils"
@@ -15,12 +14,6 @@ import (
 
 type NextQuestionIndicatorState struct {
 	QuestionBank []adkutils.QuestionBankQuestion
-}
-
-// NextQuestionIndicatorInput is passed as Prompt in AgentRunRequest.
-type NextQuestionIndicatorInput struct {
-	CurrentQuestion adkutils.QuestionBankQuestion
-	QAndA           string
 }
 
 type NextQuestionIndicator struct {
@@ -54,22 +47,13 @@ func (a *NextQuestionIndicator) Run(
 	r *runner.Runner,
 	req adkutils.AgentRunRequest,
 ) iter.Seq2[string, error] {
-	input, ok := req.Prompt.(NextQuestionIndicatorInput)
+	// Prompt is now a plain string (either current question JSON or candidate's answer)
+	text, ok := req.Prompt.(string)
 	if !ok {
 		return func(yield func(string, error) bool) {
-			yield("", fmt.Errorf("invalid prompt type: expected NextQuestionIndicatorInput, got %T", req.Prompt))
+			yield("", fmt.Errorf("invalid prompt type: expected string, got %T", req.Prompt))
 		}
 	}
-
-	questionJSON, err := json.MarshalIndent(input.CurrentQuestion, "", "  ")
-	if err != nil {
-		return func(yield func(string, error) bool) {
-			yield("", fmt.Errorf("marshal current question: %w", err))
-		}
-	}
-
-	text := fmt.Sprintf("Current Question Entity:\n%s\n\nQ&A Exchange:\n%s",
-		string(questionJSON), input.QAndA)
 
 	return func(yield func(string, error) bool) {
 		events := r.Run(
