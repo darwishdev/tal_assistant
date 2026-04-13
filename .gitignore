@@ -2,3 +2,5 @@ build/bin
 node_modules
 frontend/dist
 config/app.env
+credentials/
+pkg/stt/application_default_credentials.json

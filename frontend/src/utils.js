@@ -84,3 +84,5 @@ function clearLoginSession() {
 function hasValidSession() {
     return getLoginSession() !== null
 }
+
+export { getLoginSession, saveLoginSession, clearLoginSession, hasValidSession }
