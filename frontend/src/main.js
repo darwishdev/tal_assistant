@@ -617,6 +617,7 @@ function renderActiveSession(timerDeferred = false) {
             <div id="nqi-panel">
                 <div class="nqi-panel-header">
                     <span class="nqi-panel-title">Questions</span>
+                    <button id="eval-answer-btn" class="ghost-btn" onclick="manualEvaluateAnswer()" title="Mark answer complete and evaluate">✓ Complete</button>
                     <button id="infer-btn" class="ghost-btn" onclick="inferNextQuestion()">✦ Ask</button>
                 </div>
 
@@ -1030,6 +1031,31 @@ function saveFiles() {
 }
 
 // ── NQI ────────────────────────────────────────────────────────────────────
+function manualEvaluateAnswer() {
+    const evalBtn = document.getElementById('eval-answer-btn')
+    if (!evalBtn) return
+    
+    evalBtn.disabled = true
+    evalBtn.textContent = '⏳ Evaluating…'
+    
+    window.go.main.App.ManualEvaluateAnswer()
+        .then(result => {
+            if (result === 'ok') {
+                showError('✓ Answer evaluation triggered')
+                // Visual feedback
+                evalBtn.classList.add('success-flash')
+                setTimeout(() => evalBtn.classList.remove('success-flash'), 1000)
+            } else {
+                showError(`Evaluation failed: ${result}`)
+            }
+        })
+        .catch(err => showError(`Evaluation error: ${err}`))
+        .finally(() => {
+            evalBtn.disabled = false
+            evalBtn.textContent = '✓ Complete'
+        })
+}
+
 function inferNextQuestion() {
     const input = document.getElementById('chat-input')
     const inferBtn = document.getElementById('infer-btn')
@@ -1279,5 +1305,5 @@ Object.assign(window, {
     submitLogin, navigate, loadInterviewList,
     goToFind, goToSession, switchTab,
     startSessionAndRecord, toggleRec, toggleHistoryMode, toggleSummaryView,
-    inferNextQuestion, loadAudioDevices,
+    inferNextQuestion, manualEvaluateAnswer, loadAudioDevices,
 })

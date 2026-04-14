@@ -979,6 +979,17 @@ html, body {
     --wails-draggable: no-drag;
 }
 .ghost-btn:hover { background: rgba(255,255,255,0.05); color: var(--txt); border-color: var(--purple-border); }
+.ghost-btn.success-flash {
+    background: rgba(74,222,128,0.15);
+    color: #4ade80;
+    border-color: rgba(74,222,128,0.3);
+    animation: successPulse .5s ease;
+}
+
+@keyframes successPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
 
 .icon-btn {
     width: 26px;

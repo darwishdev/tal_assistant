@@ -262,20 +262,41 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		return
 
 	case strings.HasPrefix(event.Signal, "A:"):
-		// Answer signal: persist answer and send it to NQI (agent should respond with decision)
+		// Answer signal: check if it's an answer-end signal (ends with semicolon)
 		text := strings.TrimSpace(strings.TrimPrefix(event.Signal, "A:"))
+		isAnswerEnd := strings.HasSuffix(text, ";")
+		
+		// Remove the semicolon from the answer text if present
+		if isAnswerEnd {
+			text = strings.TrimSuffix(text, ";")
+			text = strings.TrimSpace(text)
+		}
+		
+		// Always save the answer (whether partial or complete)
 		if err := s.cache.SaveAnswer(ctx, event.InterviewID, event.QuestionID, text); err != nil {
 			log.Printf("[orchestrator] [%s] save answer failed: %v", event.InterviewID, err)
 		}
+		
+		// If not an answer-end signal, skip the judging and NQI flow
+		if !isAnswerEnd {
+			log.Printf("[orchestrator] [%s] answer in progress (no semicolon) — skipping judging/NQI", event.InterviewID)
+			return
+		}
+		
+		log.Printf("[orchestrator] [%s] answer complete (semicolon detected) — proceeding with judging/NQI", event.InterviewID)
 	}
 
-	// Only process NQI decision when we have an answer signal
+	// Only process NQI decision when we have a complete answer signal (with semicolon)
 	if !strings.HasPrefix(event.Signal, "A:") {
 		return
 	}
-
-	// Send answer to NQI and collect the decision
+	
+	// Extract answer text (semicolon already removed above)
 	answerText := strings.TrimSpace(strings.TrimPrefix(event.Signal, "A:"))
+	if strings.HasSuffix(answerText, ";") {
+		answerText = strings.TrimSuffix(answerText, ";")
+		answerText = strings.TrimSpace(answerText)
+	}
 	prompt := fmt.Sprintf("Candidate's Answer:\n%s", answerText)
 
 	var sb strings.Builder

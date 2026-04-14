@@ -1,0 +1,7 @@
+────────────────────────────────────────
+test      : TestSignalingAgentEdgeCases/short_acknowledgment
+timestamp : 2026-04-14T22:04:26+02:00
+session   : TestSignalingAgentEdgeCases_1776197061931
+input     : Candidate: Yes, I understand.
+output    : UNCLEARUNCLEAR
+

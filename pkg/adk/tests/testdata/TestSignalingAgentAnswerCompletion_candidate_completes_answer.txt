@@ -1,0 +1,7 @@
+────────────────────────────────────────
+test      : TestSignalingAgentAnswerCompletion/candidate_completes_answer
+timestamp : 2026-04-14T22:04:13+02:00
+session   : TestSignalingAgentAnswerCompletion_1776197038680
+input     : Candidate: The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, preventing true parallelism in CPU-bound threads
+output    : A:The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, preventing true parallelism in CPU-bound threads;A:The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, preventing true parallelism in CPU-bound threads;
+

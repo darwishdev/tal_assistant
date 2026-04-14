@@ -1,0 +1,14 @@
+────────────────────────────────────────
+test      : TestSignalingAgentAnswerCompletionSignal/next_question
+timestamp : 2026-04-14T21:56:28+02:00
+session   : TestSignalingAgentAnswerCompletionSignal_1776196582144
+input     : Q:Design a real-time leaderboard for a multiplayer game.
+output    : q2
+
+────────────────────────────────────────
+test      : TestSignalingAgentAnswerCompletionSignal/next_question
+timestamp : 2026-04-14T22:03:56+02:00
+session   : TestSignalingAgentAnswerCompletionSignal_1776197028221
+input     : Q:Design a real-time leaderboard for a multiplayer game.
+output    : q2
+

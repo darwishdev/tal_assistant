@@ -145,3 +145,24 @@ session   : TestSignalingAgentMapperRun_1775918492414
 input     : Q:Design a real-time leaderboard for a multiplayer game.
 output    : q2
 
+────────────────────────────────────────
+test      : TestSignalingAgentMapperRun
+timestamp : 2026-04-14T22:03:43+02:00
+session   : TestSignalingAgentMapperRun_1776197022486
+input     : Q:Explain the Python GIL and its impact on multi-threaded programs.
+output    : q1
+
+────────────────────────────────────────
+test      : TestSignalingAgentMapperRun
+timestamp : 2026-04-14T22:03:47+02:00
+session   : TestSignalingAgentMapperRun_1776197022486
+input     : A:The GIL is a mutex in CPython that allows only one thread to execute bytecode at a time, preventing true parallelism in CPU-bound threads.
+output    : q1
+
+────────────────────────────────────────
+test      : TestSignalingAgentMapperRun
+timestamp : 2026-04-14T22:03:48+02:00
+session   : TestSignalingAgentMapperRun_1776197022486
+input     : Q:Design a real-time leaderboard for a multiplayer game.
+output    : q2
+

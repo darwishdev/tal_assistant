@@ -26,6 +26,10 @@ export function ListAudioDevices() {
   return window['go']['main']['App']['ListAudioDevices']();
 }
 
+export function ManualEvaluateAnswer() {
+  return window['go']['main']['App']['ManualEvaluateAnswer']();
+}
+
 export function Minimize() {
   return window['go']['main']['App']['Minimize']();
 }

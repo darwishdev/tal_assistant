@@ -1,0 +1,7 @@
+────────────────────────────────────────
+test      : TestSignalingAgentAnswerCompletion/candidate_starts_answer
+timestamp : 2026-04-14T22:04:02+02:00
+session   : TestSignalingAgentAnswerCompletion_1776197038680
+input     : Candidate: Well, the GIL is a mutex in CPython
+output    : A:Well, the GIL is a mutex in CPythonA:Well, the GIL is a mutex in CPython
+

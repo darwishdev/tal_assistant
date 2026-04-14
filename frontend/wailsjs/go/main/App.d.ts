@@ -16,6 +16,8 @@ export function Close():Promise<void>;
 
 export function ListAudioDevices():Promise<main.ListSourcesResonse>;
 
+export function ManualEvaluateAnswer():Promise<string>;
+
 export function Minimize():Promise<void>;
 
 export function SaveFiles(arg1:string,arg2:string):Promise<string>;

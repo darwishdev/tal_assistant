@@ -1,0 +1,7 @@
+────────────────────────────────────────
+test      : TestSignalingAgentAnswerCompletion/recruiter_asks_question
+timestamp : 2026-04-14T22:04:00+02:00
+session   : TestSignalingAgentAnswerCompletion_1776197038680
+input     : Recruiter: So, can you explain the Python GIL and its impact on multi-threaded programs?
+output    : Q:So, can you explain the Python GIL and its impact on multi-threaded programs?Q:So, can you explain the Python GIL and its impact on multi-threaded programs?
+

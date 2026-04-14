@@ -1,0 +1,7 @@
+────────────────────────────────────────
+test      : TestSignalingAgentAnswerCompletion/next_question
+timestamp : 2026-04-14T22:04:15+02:00
+session   : TestSignalingAgentAnswerCompletion_1776197038680
+input     : Recruiter: Great! Now, can you design a real-time leaderboard for a multiplayer game?
+output    : Q:Great! Now, can you design a real-time leaderboard for a multiplayer game?Q:Great! Now, can you design a real-time leaderboard for a multiplayer game?
+

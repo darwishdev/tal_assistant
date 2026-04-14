@@ -1,0 +1,7 @@
+────────────────────────────────────────
+test      : TestSignalingAgentAnswerCompletion/partial_answer_q2
+timestamp : 2026-04-14T22:04:19+02:00
+session   : TestSignalingAgentAnswerCompletion_1776197038680
+input     : Candidate: I would use Redis sorted sets
+output    : A:I would use Redis sorted setsA:I would use Redis sorted sets
+

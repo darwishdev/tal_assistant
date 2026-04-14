@@ -233,7 +233,12 @@ func (a *App) processSigQueue() {
 			log.Printf("[sig-queue] speaker=%q → QUESTION: %q", job.speaker, signal[2:])
 			qandaBuf.Reset()
 		case strings.HasPrefix(signal, "A:"):
-			log.Printf("[sig-queue] speaker=%q → ANSWER: %q", job.speaker, signal[2:])
+			answerText := signal[2:]
+			if strings.HasSuffix(strings.TrimSpace(answerText), ";") {
+				log.Printf("[sig-queue] speaker=%q → ANSWER COMPLETE: %q", job.speaker, answerText)
+			} else {
+				log.Printf("[sig-queue] speaker=%q → ANSWER IN PROGRESS: %q", job.speaker, answerText)
+			}
 		default:
 			log.Printf("[sig-queue] speaker=%q → UNRECOGNISED signal=%q, skipping", job.speaker, signal)
 			continue
@@ -688,4 +693,81 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ManualEvaluateAnswer allows the recruiter to manually trigger evaluation of the
+// current answer, running both the judging agent and NQI agent. This is useful
+// when the signaling agent fails to detect answer completion automatically.
+func (a *App) ManualEvaluateAnswer() string {
+	if a.sessions == nil {
+		return "error: no active session"
+	}
+	if a.interviewID == "" {
+		return "error: no interview ID"
+	}
+
+	log.Printf("[manual-eval] recruiter triggered manual answer evaluation — interview=%s", a.interviewID)
+
+	// Get current question pointer
+	currentQuestionID, err := a.redisCache.FindCurrentQuestionPointer(a.ctx, a.interviewID)
+	if err != nil || currentQuestionID == "" {
+		msg := "error: no active question found"
+		log.Printf("[manual-eval] %s: %v", msg, err)
+		return msg
+	}
+
+	// Get the current question and answer
+	currentQuestion, err := a.redisCache.FindQuestionByID(a.ctx, a.interviewID, currentQuestionID)
+	if err != nil {
+		msg := fmt.Sprintf("error: question %s not found: %v", currentQuestionID, err)
+		log.Printf("[manual-eval] %s", msg)
+		return msg
+	}
+
+	// Get the summary to find the answer
+	summary, err := a.redisCache.FindInterviewSummary(a.ctx, a.interviewID)
+	if err != nil {
+		msg := fmt.Sprintf("error: failed to load interview summary: %v", err)
+		log.Printf("[manual-eval] %s", msg)
+		return msg
+	}
+
+	// Find the answer for the current question
+	var answerText string
+	for _, qa := range summary.Questions {
+		if qa.Question.ID == currentQuestionID {
+			answerText = qa.Answer
+			break
+		}
+	}
+
+	if answerText == "" {
+		msg := "error: no answer found for current question"
+		log.Printf("[manual-eval] %s — questionID=%s", msg, currentQuestionID)
+		return msg
+	}
+
+	log.Printf("[manual-eval] triggering evaluation — questionID=%s answerLen=%d", currentQuestionID, len(answerText))
+
+	// Publish a signal_mapped event with the answer (add semicolon to mark completion)
+	// This triggers the normal orchestration flow (judging + NQI)
+	if err := a.redisPublisher.PublishSignalMapped(a.ctx, redispkg.SignalMappedEvent{
+		InterviewID:        a.interviewID,
+		UserID:             a.userID,
+		Signal:             fmt.Sprintf("A:%s;", answerText), // Add semicolon to indicate completion
+		QuestionID:         currentQuestionID,
+		QAndA:              fmt.Sprintf("Q: %s\nA: %s", currentQuestion.Question, answerText),
+		SignalingSessionID: a.sessions.SignalingAgentSessionID,
+		MapperSessionID:    a.sessions.SignalingAgentMapperSessionID,
+		IndicatorSessionID: a.sessions.NextQuestionIndicatorSessionID,
+		ExtenderSessionID:  a.sessions.NextQuestionExtenderSessionID,
+		JudgingSessionID:   a.sessions.JudgingAgentSessionID,
+	}); err != nil {
+		msg := fmt.Sprintf("error: failed to publish signal_mapped: %v", err)
+		log.Printf("[manual-eval] %s", msg)
+		return msg
+	}
+
+	log.Printf("[manual-eval] signal_mapped published — orchestration pipeline triggered")
+	return "ok"
 }
