@@ -17,7 +17,7 @@ const (
 )
 
 type STTServiceInterface interface {
-	StreamDiarized(ctx context.Context, audio io.Reader) (<-chan TranscriptResult, error)
+	StreamDiarized(ctx context.Context, audio io.Reader, channels int) (<-chan TranscriptResult, error)
 	ProjectID() string
 }
 
@@ -101,9 +101,10 @@ func (s *STTService) ProjectID() string {
 // with speaker diarization enabled. Results are pushed onto the returned channel;
 // the channel is closed when the stream ends or ctx is cancelled.
 //
-// audio    – raw PCM s16le, 16 kHz, 2 channels interleaved
+// audio    – raw PCM s16le, 16 kHz
+// channels - number of interleaved channels (1 or 2)
 // Returns  – <-chan TranscriptResult (read-only to callers)
-func (s *STTService) StreamDiarized(ctx context.Context, audio io.Reader) (<-chan TranscriptResult, error) {
+func (s *STTService) StreamDiarized(ctx context.Context, audio io.Reader, channels int) (<-chan TranscriptResult, error) {
 	// client, err := speech.NewClient(ctx)
 	// if err != nil {
 	// 	return nil, fmt.Errorf("speech client: %w", err)
@@ -115,6 +116,21 @@ func (s *STTService) StreamDiarized(ctx context.Context, audio io.Reader) (<-cha
 		return nil, fmt.Errorf("streaming recognize: %w", err)
 	}
 
+	features := &speechpb.RecognitionFeatures{
+		EnableAutomaticPunctuation: true,
+		EnableWordTimeOffsets:      true,
+	}
+
+	if channels == 2 {
+		features.MultiChannelMode = speechpb.RecognitionFeatures_SEPARATE_RECOGNITION_PER_CHANNEL
+	} else {
+		// Use auto-diarization for mono streams
+		features.DiarizationConfig = &speechpb.SpeakerDiarizationConfig{
+			MinSpeakerCount: 2,
+			MaxSpeakerCount: 2,
+		}
+	}
+
 	cfg := &speechpb.StreamingRecognizeRequest{
 		Recognizer: s.recognizer,
 		StreamingRequest: &speechpb.StreamingRecognizeRequest_StreamingConfig{
@@ -124,16 +140,12 @@ func (s *STTService) StreamDiarized(ctx context.Context, audio io.Reader) (<-cha
 						ExplicitDecodingConfig: &speechpb.ExplicitDecodingConfig{
 							Encoding:          speechpb.ExplicitDecodingConfig_LINEAR16,
 							SampleRateHertz:   SampleRate,
-							AudioChannelCount: 2, // stereo — one channel per speaker
+							AudioChannelCount: int32(channels),
 						},
 					},
 					LanguageCodes: []string{"en-US"},
 					Model:         "long",
-					Features: &speechpb.RecognitionFeatures{
-						EnableAutomaticPunctuation: true,
-						EnableWordTimeOffsets:      true,
-						MultiChannelMode:           1,
-					},
+					Features:      features,
 				},
 				StreamingFeatures: &speechpb.StreamingRecognitionFeatures{
 					InterimResults: true,
@@ -203,9 +215,18 @@ func (s *STTService) StreamDiarized(ctx context.Context, audio io.Reader) (<-cha
 				}
 				alt := result.Alternatives[0]
 				SpeakerTag := "Candidate"
-				if result.ChannelTag == 2 {
-					SpeakerTag = "You"
+				if channels == 2 {
+					if result.ChannelTag == 2 {
+						SpeakerTag = "You"
+					}
+				} else {
+					// For mono diarization, Google provides speaker labels on the words.
+					// We'll tag the entire result based on the first word's speaker label if present.
+					if len(alt.Words) > 0 && alt.Words[0].SpeakerLabel != "" {
+						SpeakerTag = alt.Words[0].SpeakerLabel
+					}
 				}
+
 				tr := TranscriptResult{
 					Text:    alt.Transcript,
 					IsFinal: result.IsFinal,

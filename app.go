@@ -15,7 +15,7 @@ import (
 	"tal_assistant/pkg/adk"
 	"tal_assistant/pkg/adkutils"
 	"tal_assistant/pkg/atsclient"
-	"tal_assistant/pkg/ffmpeg"
+	"tal_assistant/pkg/recording"
 	redispkg "tal_assistant/pkg/redis"
 	"tal_assistant/pkg/stt"
 	"tal_assistant/pkg/timeutils"
@@ -34,7 +34,7 @@ type sigJob struct {
 
 type App struct {
 	ctx              context.Context
-	ffmpegService    *ffmpeg.FFMPEGService
+	ffmpegService    *recording.RecordingService
 	redisSub         *redispkg.RedisSubscriber
 	redisCancel      context.CancelFunc
 	currentVideoPath string
@@ -138,7 +138,7 @@ func (a *App) startup(ctx context.Context) {
 	
 	a.sttService = sttService
 
-	a.ffmpegService = ffmpeg.NewFFMPEGService()
+	a.ffmpegService = recording.NewRecordingService()
 
 	adkService, err := adk.NewADKService(ctx, a.geminiKey)
 	if err != nil {
@@ -357,25 +357,25 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 	}
 
 	// ── Audio pipe for STT ────────────────────────────────────────────────
-	audioPipe, err := a.ffmpegService.Start(micDevice, speakerDevice)
+	audioPipe, channels, err := a.ffmpegService.Start(micDevice, speakerDevice)
 	if err != nil {
 		log.Printf("[recording] ERROR: audio pipe failed: %v", err)
 		return fmt.Sprintf("error audio pipe: %v", err)
 	}
-	log.Println("[recording] audio pipe open — STT stream starting")
+	log.Printf("[recording] audio pipe open (channels=%d) — STT stream starting", channels)
 
 	// ── 2. STT stream ──────────────────────────────────────────────────────
 	if a.sttService == nil {
 		a.logAndEmitError("STT service not available - transcription disabled. Check Google Cloud credentials.")
 		log.Printf("[recording] WARNING: STT service is nil, skipping transcription")
 	} else {
-		go a.runSpeechStream(audioPipe)
+		go a.runSpeechStream(audioPipe, channels)
 	}
 
 	// ── Screen recording (optional) ───────────────────────────────────────
 	outputDir := a.sessionOutputDir()
 
-	var screen *ffmpeg.ScreenSource
+	var screen *recording.ScreenSource
 	if screenDevice != "" {
 		// find the matching ScreenSource from the device list
 		screens, err := a.ffmpegService.ScreenDeviceList(a.ctx)
@@ -481,7 +481,7 @@ func (a *App) logAndEmitError(msg string) {
 
 // ── Google Speech ──────────────────────────────────────────────────────────
 
-func (a *App) runSpeechStream(audio io.Reader) {
+func (a *App) runSpeechStream(audio io.Reader, channels int) {
 	ctx, cancel := context.WithCancel(a.ctx)
 	defer cancel()
 
@@ -493,7 +493,7 @@ func (a *App) runSpeechStream(audio io.Reader) {
 		}
 	}()
 
-	results, err := a.sttService.StreamDiarized(ctx, audio)
+	results, err := a.sttService.StreamDiarized(ctx, audio, channels)
 	if err != nil {
 		a.logAndEmitError(fmt.Sprintf("stt stream: %v", err))
 		return
@@ -545,14 +545,16 @@ func (a *App) runSpeechStream(audio io.Reader) {
 // ── Audio / screen devices ─────────────────────────────────────────────────
 
 type DeviceSource struct {
-	ID   string
-	Name string
+	ID         string
+	Name       string
+	IsDefault  bool
+	IsPersonal bool
 }
 
 type ListSourcesResonse struct {
 	Mics     []DeviceSource
 	Speakers []DeviceSource
-	Screens  []ffmpeg.ScreenSource
+	Screens  []recording.ScreenSource
 }
 
 func (a *App) ListAudioDevices() (*ListSourcesResonse, error) {
@@ -563,7 +565,12 @@ func (a *App) ListAudioDevices() (*ListSourcesResonse, error) {
 
 	var mics, speakers []DeviceSource
 	for _, dev := range audioDevices {
-		src := DeviceSource{ID: dev.ID, Name: dev.Name}
+		src := DeviceSource{
+			ID:         dev.ID, 
+			Name:       dev.Name,
+			IsDefault:  dev.IsDefault,
+			IsPersonal: dev.IsPersonal,
+		}
 		if dev.Type == "mic" {
 			mics = append(mics, src)
 		} else {
@@ -576,9 +583,9 @@ func (a *App) ListAudioDevices() (*ListSourcesResonse, error) {
 		return nil, err
 	}
 
-	var screens []ffmpeg.ScreenSource
+	var screens []recording.ScreenSource
 	for _, screen := range screenDevices {
-		screens = append(screens, ffmpeg.ScreenSource{
+		screens = append(screens, recording.ScreenSource{
 			ID: screen.ID, Name: screen.Name,
 			Screenshot: screen.Screenshot})
 	}

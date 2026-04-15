@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -39,10 +40,34 @@ type FFMPEGService struct {
 	cmd            *exec.Cmd
 	screenCmd      *exec.Cmd
 	screenCmdStdin io.WriteCloser
+	ffmpegPath     string
+}
+
+// getFFmpegPath returns the path to ffmpeg executable.
+// Priority:
+//  1. Bundled ffmpeg.exe next to the executable (production)
+//  2. System ffmpeg in PATH (development)
+func getFFmpegPath() string {
+	// Try bundled ffmpeg first
+	exePath, err := os.Executable()
+	if err == nil {
+		exeDir := filepath.Dir(exePath)
+		bundledFFmpeg := filepath.Join(exeDir, "ffmpeg.exe")
+		if _, err := os.Stat(bundledFFmpeg); err == nil {
+			log.Printf("[ffmpeg] Using bundled ffmpeg: %s", bundledFFmpeg)
+			return bundledFFmpeg
+		}
+	}
+
+	// Fall back to system ffmpeg
+	log.Printf("[ffmpeg] Using system ffmpeg from PATH")
+	return "ffmpeg"
 }
 
 func NewFFMPEGService() *FFMPEGService {
-	return &FFMPEGService{}
+	return &FFMPEGService{
+		ffmpegPath: getFFmpegPath(),
+	}
 }
 
 // Start launches a single ffmpeg process that:
@@ -58,7 +83,7 @@ func (f *FFMPEGService) Start(micDevice, speakerDevice string) (io.ReadCloser, e
 	}
 
 	f.cmd = exec.Command(
-		"ffmpeg",
+		f.ffmpegPath,
 		"-f", "dshow", "-i", "audio="+micDevice,
 		"-f", "dshow", "-i", "audio="+speakerDevice,
 		"-filter_complex", "[0:a]aformat=channel_layouts=mono[m];[1:a]aformat=channel_layouts=mono[s];[m][s]amerge=inputs=2[aout]",
@@ -134,7 +159,7 @@ func (f *FFMPEGService) StartScreenRecording(
 		videoPath,
 	)
 
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.Command(f.ffmpegPath, args...)
 	cmd.Stderr = nil
 
 	stdin, err := cmd.StdinPipe()
@@ -231,7 +256,7 @@ Select-Object FriendlyName, InstanceId
 		}
 
 		// FriendlyName can have spaces, so InstanceId is last field
-		instanceID := fields[len(fields)-1]
+		// instanceID := fields[len(fields)-1]
 		name := strings.Join(fields[:len(fields)-1], " ")
 
 		devType := "mic"

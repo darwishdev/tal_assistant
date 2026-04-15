@@ -1,12 +1,14 @@
 module tal_assistant
 
-go 1.25.0
+go 1.26.1
 
 require (
 	cloud.google.com/go/speech v1.30.0
+	github.com/cyberxnomad/wasapi v0.4.0
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/spf13/viper v1.21.0
 	github.com/wailsapp/wails/v2 v2.11.0
+	golang.org/x/sys v0.41.0
 	google.golang.org/adk v1.0.0
 	google.golang.org/api v0.265.0
 	google.golang.org/genai v1.40.0
@@ -73,7 +75,6 @@ require (
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/genproto v0.0.0-20260128011058-8636f8732409 // indirect

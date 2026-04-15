@@ -1199,42 +1199,100 @@ function appendUserBubble(prompt) {
 function loadAudioDevices() {
     window.go.main.App.ListAudioDevices()
         .then(devices => {
+            // ── Microphones ────────────────────────────────────────────────
             const micList = document.getElementById('mic-list')
             micList.innerHTML = ''
             if (devices.Mics?.length) {
-                devices.Mics.forEach(mic => {
+                devices.Mics.forEach((mic, idx) => {
                     const label = document.createElement('label')
                     label.className = 'device-option'
                     const radio = document.createElement('input')
                     radio.type = 'radio'; radio.name = 'microphone'; radio.value = mic.Name
+                    
+                    // Autoselect if default, or if it's the first one and no default is found yet
+                    const isDefault = mic.IsDefault || (idx === 0 && !devices.Mics.some(m => m.IsDefault))
+                    if (isDefault) {
+                        radio.checked = true
+                        onDeviceSelect('mic', mic.Name)
+                    }
+                    
                     radio.addEventListener('change', () => onDeviceSelect('mic', mic.Name))
                     const span = document.createElement('span')
                     span.className = 'device-name'; span.textContent = mic.Name
                     label.appendChild(radio); label.appendChild(span)
+
+                    if (mic.IsDefault) {
+                        const defTag = document.createElement('span')
+                        defTag.className = 'tag default-tag'
+                        defTag.textContent = 'Default'
+                        defTag.style.marginLeft = '8px'
+                        defTag.style.fontSize = '0.8em'
+                        defTag.style.background = '#e2e8f0'
+                        defTag.style.padding = '2px 6px'
+                        defTag.style.borderRadius = '4px'
+                        label.appendChild(defTag)
+                    }
+                    
                     micList.appendChild(label)
                 })
             } else {
                 micList.innerHTML = '<div class="no-devices">No microphones found</div>'
             }
 
+            // ── Speakers ───────────────────────────────────────────────────
             const speakerList = document.getElementById('speaker-list')
             speakerList.innerHTML = ''
             if (devices.Speakers?.length) {
-                devices.Speakers.forEach(speaker => {
+                devices.Speakers.forEach((speaker, idx) => {
                     const label = document.createElement('label')
                     label.className = 'device-option'
                     const radio = document.createElement('input')
                     radio.type = 'radio'; radio.name = 'speaker'; radio.value = speaker.Name
+                    
+                    // Autoselect if default, or if it's the first one and no default is found yet
+                    const isDefault = speaker.IsDefault || (idx === 0 && !devices.Speakers.some(s => s.IsDefault))
+                    if (isDefault) {
+                        radio.checked = true
+                        onDeviceSelect('speaker', speaker.Name)
+                    }
+                    
                     radio.addEventListener('change', () => onDeviceSelect('speaker', speaker.Name))
                     const span = document.createElement('span')
                     span.className = 'device-name'; span.textContent = speaker.Name
                     label.appendChild(radio); label.appendChild(span)
+
+                    if (speaker.IsDefault) {
+                        const defTag = document.createElement('span')
+                        defTag.className = 'tag default-tag'
+                        defTag.textContent = 'Default'
+                        defTag.style.marginLeft = '8px'
+                        defTag.style.fontSize = '0.8em'
+                        defTag.style.background = '#e2e8f0'
+                        defTag.style.padding = '2px 6px'
+                        defTag.style.borderRadius = '4px'
+                        label.appendChild(defTag)
+                    }
+
+                    if (speaker.IsPersonal === false) {
+                        const loudTag = document.createElement('span')
+                        loudTag.className = 'tag loud-tag'
+                        loudTag.textContent = 'Loud'
+                        loudTag.style.marginLeft = '8px'
+                        loudTag.style.fontSize = '0.8em'
+                        loudTag.style.background = '#fed7d7'
+                        loudTag.style.color = '#c53030'
+                        loudTag.style.padding = '2px 6px'
+                        loudTag.style.borderRadius = '4px'
+                        label.appendChild(loudTag)
+                    }
+
                     speakerList.appendChild(label)
                 })
             } else {
                 speakerList.innerHTML = '<div class="no-devices">No speakers found</div>'
             }
 
+            // ── Screens ────────────────────────────────────────────────────
             const screenList = document.getElementById('screen-list')
             screenList.innerHTML = ''
             const noneLabel = document.createElement('label')
