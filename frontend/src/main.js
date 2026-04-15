@@ -617,8 +617,7 @@ function renderActiveSession(timerDeferred = false) {
             <div id="nqi-panel">
                 <div class="nqi-panel-header">
                     <span class="nqi-panel-title">Questions</span>
-                    <button id="eval-answer-btn" class="ghost-btn" onclick="manualEvaluateAnswer()" title="Mark answer complete and evaluate">✓ Complete</button>
-                    <button id="infer-btn" class="ghost-btn" onclick="inferNextQuestion()">✦ Ask</button>
+                    <button id="eval-answer-btn" class="ghost-btn" onclick="manualEvaluateAnswer()" title="Mark answer complete and evaluate">✦ Ask</button>
                 </div>
 
                 <!-- Scrollable content wrapper -->
@@ -643,11 +642,6 @@ function renderActiveSession(timerDeferred = false) {
                     <div id="nqi-messages"></div>
                 </div>
 
-                <div id="chat-bar">
-                    <input id="chat-input" class="field-input" type="text"
-                           placeholder="Guide next question… (or leave blank for auto)" />
-                    <button id="send-btn" onclick="inferNextQuestion()">➤</button>
-                </div>
             </div>
 
         </div>
@@ -655,9 +649,6 @@ function renderActiveSession(timerDeferred = false) {
         <div id="err-log"></div>
     `
 
-    document.getElementById('chat-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') inferNextQuestion()
-    })
 
     if (!timerDeferred) _startRecTimer()
     navigate('active_session')
@@ -1057,7 +1048,6 @@ function manualEvaluateAnswer() {
 }
 
 function inferNextQuestion() {
-    const input = document.getElementById('chat-input')
     const inferBtn = document.getElementById('infer-btn')
     const sendBtn = document.getElementById('send-btn')
     const prompt = input.value.trim()

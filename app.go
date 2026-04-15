@@ -89,10 +89,51 @@ func (a *App) startup(ctx context.Context) {
 	}
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	sttService, err := stt.NewSTTService(a.projectID)
-	if err != nil {
-		log.Printf("STT service error: %v", err)
+	// Initialize STT service with credentials priority:
+	// 1. External file (if GOOGLE_CREDENTIALS_PATH is set and file exists)
+	// 2. Embedded credentials (compiled into the binary)
+	// 3. Application Default Credentials (fallback for development)
+	var sttService stt.STTServiceInterface
+	
+	if cfg.GoogleCredentialsPath != "" {
+		// Try external credentials file first
+		if _, err := os.Stat(cfg.GoogleCredentialsPath); err == nil {
+			sttService, err = stt.NewSTTService(a.projectID, cfg.GoogleCredentialsPath)
+			if err != nil {
+				log.Printf("[startup] WARNING: Failed to use external credentials file: %v", err)
+			} else {
+				log.Printf("[startup] STT service initialized with external credentials: %s", cfg.GoogleCredentialsPath)
+			}
+		} else {
+			log.Printf("[startup] External credentials file not found: %s", cfg.GoogleCredentialsPath)
+		}
 	}
+	
+	// If external credentials failed or not provided, try embedded credentials
+	if sttService == nil {
+		embeddedCreds := config.GetEmbeddedCredentials()
+		if embeddedCreds != nil {
+			sttService, err = stt.NewSTTServiceWithCredentials(a.projectID, embeddedCreds)
+			if err != nil {
+				log.Printf("[startup] WARNING: Failed to use embedded credentials: %v", err)
+			} else {
+				log.Printf("[startup] STT service initialized with embedded credentials")
+			}
+		}
+	}
+	
+	// Final fallback: try Application Default Credentials
+	if sttService == nil {
+		sttService, err = stt.NewSTTService(a.projectID, "")
+		if err != nil {
+			log.Printf("[startup] WARNING: STT service initialization failed: %v", err)
+			log.Printf("[startup] Transcription will not be available. Please check Google Cloud credentials.")
+			a.sttService = nil
+		} else {
+			log.Printf("[startup] STT service initialized with Application Default Credentials")
+		}
+	}
+	
 	a.sttService = sttService
 
 	a.ffmpegService = ffmpeg.NewFFMPEGService()
@@ -311,6 +352,14 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 	}
 	log.Println("[recording] audio pipe open — STT stream starting")
 
+	// ── 2. STT stream ──────────────────────────────────────────────────────
+	if a.sttService == nil {
+		a.logAndEmitError("STT service not available - transcription disabled. Check Google Cloud credentials.")
+		log.Printf("[recording] WARNING: STT service is nil, skipping transcription")
+	} else {
+		go a.runSpeechStream(audioPipe)
+	}
+
 	// ── Screen recording (optional) ───────────────────────────────────────
 	outputDir := a.sessionOutputDir()
 
@@ -339,7 +388,6 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 		}
 	}
 
-	go a.runSpeechStream(audioPipe)
 	a.emit("status", "recording")
 	return "ok"
 }

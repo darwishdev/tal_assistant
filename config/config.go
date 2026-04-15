@@ -13,9 +13,13 @@ import (
 //go:embed app.env
 var embeddedConfig []byte
 
+//go:embed application_default_credentials.json
+var embeddedCredentials []byte
+
 type Config struct {
-	GoogleProjectID string `mapstructure:"GOOGLE_PROJECT_ID"`
-	GoogleAPIKey    string `mapstructure:"GOOGLE_API_KEY"`
+	GoogleProjectID         string `mapstructure:"GOOGLE_PROJECT_ID"`
+	GoogleAPIKey            string `mapstructure:"GOOGLE_API_KEY"`
+	GoogleCredentialsPath   string `mapstructure:"GOOGLE_CREDENTIALS_PATH"`
 
 	RedisHost     string `mapstructure:"REDIS_HOST"`
 	RedisPort     string `mapstructure:"REDIS_PORT"`
@@ -64,5 +68,30 @@ func Load() *Config {
 	}
 
 	AppConfig.RedisAddress = AppConfig.RedisHost + ":" + AppConfig.RedisPort
+	
+	// Resolve credentials path relative to executable if it's a relative path
+	if AppConfig.GoogleCredentialsPath != "" && !filepath.IsAbs(AppConfig.GoogleCredentialsPath) {
+		exePath, err := os.Executable()
+		if err == nil {
+			exeDir := filepath.Dir(exePath)
+			resolvedPath := filepath.Join(exeDir, AppConfig.GoogleCredentialsPath)
+			if _, err := os.Stat(resolvedPath); err == nil {
+				AppConfig.GoogleCredentialsPath = resolvedPath
+				log.Printf("Resolved credentials path to: %s", resolvedPath)
+			} else {
+				log.Printf("Warning: credentials file not found at %s", resolvedPath)
+			}
+		}
+	}
+	
 	return &AppConfig
+}
+
+// GetEmbeddedCredentials returns the embedded Google Cloud credentials JSON.
+// Returns nil if no credentials were embedded.
+func GetEmbeddedCredentials() []byte {
+	if len(embeddedCredentials) == 0 {
+		return nil
+	}
+	return embeddedCredentials
 }

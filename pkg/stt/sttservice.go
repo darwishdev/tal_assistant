@@ -8,6 +8,7 @@ import (
 
 	speech "cloud.google.com/go/speech/apiv2"
 	"cloud.google.com/go/speech/apiv2/speechpb"
+	"google.golang.org/api/option"
 )
 
 const (
@@ -36,11 +37,55 @@ type STTService struct {
 	recognizer string
 }
 
-func NewSTTService(projectID string) (STTServiceInterface, error) {
-	client, err := speech.NewClient(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("speech client: %w", err)
+// NewSTTService creates a new STT service client.
+// If credentialsPath is empty, it uses Application Default Credentials (ADC).
+// For production, provide a service account key file path.
+func NewSTTService(projectID string, credentialsPath string) (STTServiceInterface, error) {
+	var client *speech.Client
+	var err error
+	
+	if credentialsPath != "" {
+		// Use service account credentials file
+		client, err = speech.NewClient(context.Background(), option.WithCredentialsFile(credentialsPath))
+		if err != nil {
+			return nil, fmt.Errorf("speech client with credentials file: %w", err)
+		}
+	} else {
+		// Fall back to Application Default Credentials (development)
+		client, err = speech.NewClient(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("speech client with ADC: %w", err)
+		}
 	}
+	
+	recognizer := fmt.Sprintf("projects/%s/locations/global/recognizers/_", projectID)
+	return &STTService{
+		projectID:  projectID,
+		client:     client,
+		recognizer: recognizer,
+	}, nil
+}
+
+// NewSTTServiceWithCredentials creates a new STT service client using credentials JSON bytes.
+// This is useful for embedding credentials directly in the binary.
+func NewSTTServiceWithCredentials(projectID string, credentialsJSON []byte) (STTServiceInterface, error) {
+	var client *speech.Client
+	var err error
+	
+	if len(credentialsJSON) > 0 {
+		// Use credentials from JSON bytes
+		client, err = speech.NewClient(context.Background(), option.WithCredentialsJSON(credentialsJSON))
+		if err != nil {
+			return nil, fmt.Errorf("speech client with credentials JSON: %w", err)
+		}
+	} else {
+		// Fall back to Application Default Credentials (development)
+		client, err = speech.NewClient(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("speech client with ADC: %w", err)
+		}
+	}
+	
 	recognizer := fmt.Sprintf("projects/%s/locations/global/recognizers/_", projectID)
 	return &STTService{
 		projectID:  projectID,
