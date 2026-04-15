@@ -91,7 +91,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// Initialize STT service with credentials priority:
 	// 1. External file (if GOOGLE_CREDENTIALS_PATH is set and file exists)
-	// 2. Embedded credentials (compiled into the binary)
+	// 2. Embedded credentials (compiled into the binary) - skipped in DEV_MODE
 	// 3. Application Default Credentials (fallback for development)
 	var sttService stt.STTServiceInterface
 	
@@ -109,8 +109,8 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}
 	
-	// If external credentials failed or not provided, try embedded credentials
-	if sttService == nil {
+	// If external credentials failed or not provided, try embedded credentials (unless in dev mode)
+	if sttService == nil && !cfg.DevMode {
 		embeddedCreds := config.GetEmbeddedCredentials()
 		if embeddedCreds != nil {
 			sttService, err = stt.NewSTTServiceWithCredentials(a.projectID, embeddedCreds)
@@ -120,6 +120,8 @@ func (a *App) startup(ctx context.Context) {
 				log.Printf("[startup] STT service initialized with embedded credentials")
 			}
 		}
+	} else if cfg.DevMode {
+		log.Printf("[startup] DEV_MODE enabled - skipping embedded credentials, will use Application Default Credentials")
 	}
 	
 	// Final fallback: try Application Default Credentials
@@ -220,6 +222,15 @@ func (a *App) StartSession(userID string, questionBank []adkutils.QuestionBankQu
 	return "ok"
 }
 
+// ── cleanTranscription ─────────────────────────────────────────────────────
+// Removes punctuation marks (commas, dots) from transcription text before
+// sending to the signaling agent.
+
+func cleanTranscription(text string) string {
+	replacer := strings.NewReplacer(",", "", ".", "")
+	return replacer.Replace(text)
+}
+
 // ── Signal queue worker ────────────────────────────────────────────────────
 // Processes STT results one at a time — no concurrent calls to the signal
 // detector so the Redis session state is never raced.
@@ -237,12 +248,13 @@ func (a *App) processSigQueue() {
 		log.Printf("[sig-queue] processing utterance speaker=%q len=%d", job.speaker, len(job.text))
 
 		// ── Stream signaling agent ────────────────────────────────────────
+		cleanedText := cleanTranscription(job.text)
 		var sigBuf strings.Builder
 		for chunk, err := range a.adkService.SignalingAgentRun(adkutils.AgentRunRequest{
 			Ctx:       a.ctx,
 			SessionID: a.sessions.SignalingAgentSessionID,
 			UserID:    a.userID,
-			Prompt:    job.speaker + ": " + job.text,
+			Prompt:    job.speaker + ": " + cleanedText,
 		}) {
 			if err != nil {
 				a.logAndEmitError(fmt.Sprintf("signaling agent error: %v", err))

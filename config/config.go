@@ -20,6 +20,7 @@ type Config struct {
 	GoogleProjectID         string `mapstructure:"GOOGLE_PROJECT_ID"`
 	GoogleAPIKey            string `mapstructure:"GOOGLE_API_KEY"`
 	GoogleCredentialsPath   string `mapstructure:"GOOGLE_CREDENTIALS_PATH"`
+	DevMode                 bool   `mapstructure:"DEV_MODE"`
 
 	RedisHost     string `mapstructure:"REDIS_HOST"`
 	RedisPort     string `mapstructure:"REDIS_PORT"`

@@ -305,7 +305,7 @@ function renderInterviewFind() {
                 <h2 class="page-title" id="find-title">Interview Detail</h2>
             </div>
             <div class="page-header-right">
-                <button class="action-btn action-btn--primary" onclick="goToSession(_selectedInterview)">▶ Start Session</button>
+                <button class="action-btn action-btn--primary" onclick="goToSession('${_selectedInterview}')">▶ Start Session</button>
             </div>
         </div>
         <div id="interview-find-body" class="find-body">

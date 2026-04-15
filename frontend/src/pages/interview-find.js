@@ -1,6 +1,14 @@
 // ── Interview find / detail page ─────────────────────────────────────────────
 
 function renderInterviewFind() {
+    // Capture the interview ID early
+    const interviewId = _selectedInterview || ''
+    
+    if (!interviewId) {
+        document.getElementById('router-view').innerHTML = '<div class="table-error">No interview selected.</div>'
+        return
+    }
+    
     document.getElementById('router-view').innerHTML = `
         <div class="page-header">
             <div class="page-header-left">
@@ -8,7 +16,7 @@ function renderInterviewFind() {
                 <h2 class="page-title" id="find-title">Interview Detail</h2>
             </div>
             <div class="page-header-right">
-                <button class="action-btn action-btn--primary" onclick="goToSession(_selectedInterview)">▶ Start Session</button>
+                <button class="action-btn action-btn--primary" onclick="goToSession('${esc(interviewId)}')">▶ Start Session</button>
             </div>
         </div>
         <div id="interview-find-body" class="find-body">
