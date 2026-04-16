@@ -1,0 +1,39 @@
+===== REQUEST =====
+GET /spi/v3/members?email=esraa%40mawhub.io&limit=50&status=active HTTP/1.1
+Host: lucidya.workable.com
+User-Agent: Go-http-client/1.1
+Authorization: Bearer BexiVhSqQG0InFOVf2LGFGldTAZon5yuHlfHD9PHc5s
+Content-Type: application/json
+Accept-Encoding: gzip
+
+
+
+===== RESPONSE =====
+HTTP/2.0 200 OK
+Cache-Control: max-age=0, private, must-revalidate
+Cf-Cache-Status: DYNAMIC
+Cf-Ray: 9ed2e354ae04e159-MRS
+Content-Type: application/json; charset=utf-8
+Date: Thu, 16 Apr 2026 11:35:41 GMT
+Etag: W/"a0dd1b3bdf8100e1ad0b171e2cabea8c"
+Referrer-Policy: strict-origin-when-cross-origin
+Server: cloudflare
+Set-Cookie: _workable_visitor=BAhJIikyOWNkZWQ0Ny1mYmYxLTQ5MmEtYjU5MS0yNTVmNDUxNjhkOTUGOgZFRg%3D%3D--c010f1ad44d50ee4a6235eabc4f1ed907a90607e; domain=workable.com; path=/; expires=Mon, 16 Apr 2046 11:35:41 GMT; secure
+Set-Cookie: wmc=%7B%22cookie_id%22%3A%222ed914b1-5a7b-432e-99b0-9859b1a6dbff%22%7D; domain=.workable.com; path=/; expires=Mon, 16 Apr 2046 11:35:41 GMT; secure
+Set-Cookie: __cf_bm=cnINe3eb5SOZcF.FgkZyjP..ZhTbIM9JnsxQVmlaBV4-1776339341.5486271-1.0.1.1-bdKBNZsmCvxFUNmSHreCjn7vJW_B5u5OHRjyn6tLwqHMMgVD1jJhPALhy89f2iLOL3kUut3lwYA5lE.QQttOOV5aDVYgJUUjF71EiiZChueZfbPL0IZJxoFhykKO8lid; HttpOnly; Secure; Path=/; Domain=workable.com; Expires=Thu, 16 Apr 2026 12:05:41 GMT
+Strict-Transport-Security: max-age=15552000; includeSubDomains
+Vary: User-Agent
+X-Content-Type-Options: nosniff
+X-Download-Options: noopen
+X-Frame-Options: SAMEORIGIN
+X-Kb: false
+X-Permitted-Cross-Domain-Policies: none
+X-Rate-Limit-Limit: 10
+X-Rate-Limit-Remaining: 9
+X-Rate-Limit-Reset: 1776339351
+X-Request-Id: 58d1908c-6a62-9387-bebd-a78befab49e4
+X-Sv: 3331440021fd765074866ea8ff86fe006dbfc3fbe98e0b3508ae54525b80346d
+X-Ts: 0
+X-Xss-Protection: 1; mode=block
+
+{"members":[{"id":"1c3f84","name":"Esraa Adel","headline":"Senior Talent Acquisition Partner","email":"esraa@mawhub.io","role":"admin","type":"Member","hris_role":"hris_no_access","roles":["ats.admin"],"active":true,"collaboration_rules":[]}]}

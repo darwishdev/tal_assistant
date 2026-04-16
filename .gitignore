@@ -4,4 +4,4 @@ frontend/dist
 config/app.env
 config/application_default_credentials.json
 credentials/
-pkg/stt/application_default_credentials.json
+pkg/stt/application_default_credentials.jsonpkg/stt/credentials.json

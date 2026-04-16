@@ -19,6 +19,7 @@ import (
 	redispkg "tal_assistant/pkg/redis"
 	"tal_assistant/pkg/stt"
 	"tal_assistant/pkg/timeutils"
+	"tal_assistant/pkg/workableclient"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -53,7 +54,8 @@ type App struct {
 	userID              string
 	initialQuestionText string // first question text, emitted to UI when recording starts
 
-	atsClient atsclient.ATSClientInterface
+	atsClient      atsclient.ATSClientInterface
+	workableClient workableclient.ClientInterface
 
 	geminiKey string
 	projectID string
@@ -151,6 +153,17 @@ func (a *App) startup(ctx context.Context) {
 		log.Printf("ATSClient init error: %v", err)
 	}
 	a.atsClient = atsClient
+
+	if cfg.WorkableSubdomain != "" && cfg.WorkableToken != "" {
+		wc, err := workableclient.New(cfg.WorkableSubdomain, cfg.WorkableToken)
+		if err != nil {
+			log.Printf("WorkableClient init error: %v", err)
+		} else {
+			a.workableClient = wc
+		}
+	} else {
+		log.Println("warning: WORKABLE_SUBDOMAIN or WORKABLE_TOKEN not set, workable client unavailable")
+	}
 
 	publisher := redispkg.NewRedisPublisher()
 	a.redisPublisher = publisher
@@ -596,13 +609,33 @@ func (a *App) ListAudioDevices() (*ListSourcesResonse, error) {
 // ── ATS client — Wails-bound methods ──────────────────────────────────────
 
 // ATSLogin authenticates against the ATS and stores the session cookie.
-// Returns the LoginResponse or an error string.
-func (a *App) ATSLogin(username, password string) (*atsclient.LoginResponse, error) {
-	resp, err := a.atsClient.Login(username, password)
+// Returns the AppLoginResponse or an error string.
+func (a *App) ATSLogin(username, password string) (*AppLoginResponse, error) {
+	atsResp, err := a.atsClient.Login(username, password)
 	if err != nil {
 		return nil, fmt.Errorf("login failed: %w", err)
 	}
-	return resp, nil
+
+	result := &AppLoginResponse{
+		ATSLogin: atsResp,
+	}
+
+	if a.workableClient != nil {
+		opts := workableclient.ListMembersOptions{
+			Email: username,
+			Limit: 1,
+		}
+		members, err := a.workableClient.ListMembers(opts)
+		if err == nil && len(members) > 0 {
+			result.Member = &members[0]
+		} else if err != nil {
+			log.Printf("warning: failed to fetch workable member for %s: %v", username, err)
+		} else {
+			log.Printf("warning: no workable member found for %s", username)
+		}
+	}
+
+	return result, nil
 }
 
 // ATSInterviewList returns all interviews visible to the current session.
@@ -837,4 +870,10 @@ func (a *App) ManualEvaluateAnswer() string {
 
 	log.Printf("[manual-eval] signal_mapped published — orchestration pipeline triggered")
 	return "ok"
+}
+
+// AppLoginResponse combines the ATS login response and the Workable member info
+type AppLoginResponse struct {
+	ATSLogin *atsclient.LoginResponse `json:"ats_login"`
+	Member   *workableclient.Member   `json:"member"`
 }
