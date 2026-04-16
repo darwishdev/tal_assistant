@@ -256,7 +256,7 @@ Select-Object FriendlyName, InstanceId
 		}
 
 		// FriendlyName can have spaces, so InstanceId is last field
-		instanceID := fields[len(fields)-1]
+		// instanceID := fields[len(fields)-1]
 		name := strings.Join(fields[:len(fields)-1], " ")
 
 		devType := "mic"
