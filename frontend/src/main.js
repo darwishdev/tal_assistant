@@ -1227,7 +1227,7 @@ function loadAudioDevices() {
                         defTag.textContent = 'Default'
                         defTag.style.marginLeft = '8px'
                         defTag.style.fontSize = '0.8em'
-                        defTag.style.background = '#e2e8f0'
+                        defTag.style.background = '#060606c3'
                         defTag.style.padding = '2px 6px'
                         defTag.style.borderRadius = '4px'
                         label.appendChild(defTag)
@@ -1267,7 +1267,7 @@ function loadAudioDevices() {
                         defTag.textContent = 'Default'
                         defTag.style.marginLeft = '8px'
                         defTag.style.fontSize = '0.8em'
-                        defTag.style.background = '#e2e8f0'
+                        defTag.style.background = '#060606c3'
                         defTag.style.padding = '2px 6px'
                         defTag.style.borderRadius = '4px'
                         label.appendChild(defTag)
