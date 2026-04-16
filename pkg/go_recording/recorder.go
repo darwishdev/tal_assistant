@@ -107,6 +107,20 @@ type ffmpegProc struct {
 	cmd  *exec.Cmd
 }
 
+// ffmpegExe returns the path to the ffmpeg executable.
+// Priority:
+//  1. Bundled ffmpeg.exe next to the running executable (production)
+//  2. "ffmpeg" from PATH (development)
+func ffmpegExe() string {
+	if exePath, err := os.Executable(); err == nil {
+		bundled := filepath.Join(filepath.Dir(exePath), "ffmpeg.exe")
+		if _, err := os.Stat(bundled); err == nil {
+			return bundled
+		}
+	}
+	return "ffmpeg"
+}
+
 // New validates options and returns a Recorder ready to Start.
 // No WASAPI sessions are opened yet.
 func New(opts Options) (*Recorder, error) {
@@ -114,8 +128,8 @@ func New(opts Options) (*Recorder, error) {
 		return nil, fmt.Errorf("at least one of File, Channel or AudioStream sink must be configured")
 	}
 	if opts.File != nil || opts.AudioStream != nil {
-		if _, err := exec.LookPath("ffmpeg"); err != nil {
-			return nil, fmt.Errorf("ffmpeg not found in PATH — install from https://ffmpeg.org/download.html")
+		if _, err := exec.LookPath(ffmpegExe()); err != nil {
+			return nil, fmt.Errorf("ffmpeg not found — install from https://ffmpeg.org/download.html or bundle ffmpeg.exe next to the application")
 		}
 	}
 	if opts.File != nil {
@@ -723,7 +737,7 @@ func (r *Recorder) launchAudioFFmpeg(
 		)
 	}
 
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.Command(ffmpegExe(), args...)
 	cmd.Stderr = os.Stderr
 	if stream != nil {
 		cmd.Stdout = stream

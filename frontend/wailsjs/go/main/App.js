@@ -18,16 +18,24 @@ export function ATSLogin(arg1, arg2) {
   return window['go']['main']['App']['ATSLogin'](arg1, arg2);
 }
 
+export function BeginSession(arg1) {
+  return window['go']['main']['App']['BeginSession'](arg1);
+}
+
 export function Close() {
   return window['go']['main']['App']['Close']();
 }
 
-export function GenerateQuestionBank(arg1) {
-  return window['go']['main']['App']['GenerateQuestionBank'](arg1);
+export function GenerateQuestionBank(arg1, arg2) {
+  return window['go']['main']['App']['GenerateQuestionBank'](arg1, arg2);
 }
 
 export function GetQuestionBank(arg1) {
   return window['go']['main']['App']['GetQuestionBank'](arg1);
+}
+
+export function HasQuestionBank(arg1) {
+  return window['go']['main']['App']['HasQuestionBank'](arg1);
 }
 
 export function ListAudioDevices() {

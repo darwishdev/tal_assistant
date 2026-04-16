@@ -30,7 +30,7 @@ func NewOrchestrationSubscriber(
 ) *OrchestrationSubscriber {
 	addr := os.Getenv("REDIS_URL")
 	if addr == "" {
-		addr = "localhost:6379"
+		addr = "localhost:6378"
 	}
 	return &OrchestrationSubscriber{
 		client:    redis.NewClient(&redis.Options{Addr: addr}),

@@ -88,17 +88,49 @@ Section
 
     !insertmacro wails.files
 
+    ; --- Bundle ffmpeg ---
+    File "..\..\bin\ffmpeg.exe"
+    ; ---------------------
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
 
+    ; --- Memurai (Redis-compatible) installation ---
+    SetOutPath "$INSTDIR\redis"
+    File "..\..\bin\Memurai\memurai.exe"
+    File "..\..\bin\Memurai\memurai-services.dll"
+    File "..\..\bin\Memurai\memurai.conf"
+    File "..\..\bin\Memurai\libcrypto-3-x64.dll"
+    File "..\..\bin\Memurai\libssl-3-x64.dll"
+    File "..\..\bin\Memurai\memurai-cli.exe"
+
+    ; Register Memurai as a Windows service
+    ExecWait '"$INSTDIR\redis\memurai.exe" --service-install --service-name Memurai --loglevel notice --logfile "$INSTDIR\redis\memurai-log.txt"'
+
+    ; Start the service
+    ExecWait 'net start Memurai'
+    SetOutPath $INSTDIR
+    ; ------------------------------------------------
+
     !insertmacro wails.writeUninstaller
 SectionEnd
 
 Section "uninstall"
     !insertmacro wails.setShellContext
+
+    ; --- Memurai (Redis-compatible) uninstall ---
+    ExecWait 'net stop Memurai'
+    IfFileExists "$INSTDIR\redis\memurai.exe" 0 +2
+        ExecWait '"$INSTDIR\redis\memurai.exe" --service-uninstall --service-name Memurai'
+    RMDir /r "$INSTDIR\redis"
+    ; ---------------------------------------------
+
+    ; --- Remove bundled ffmpeg ---
+    Delete "$INSTDIR\ffmpeg.exe"
+    ; -----------------------------
 
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
 

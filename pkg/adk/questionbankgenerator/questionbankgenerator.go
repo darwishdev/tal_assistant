@@ -3,6 +3,7 @@ package questionbankgenerator
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"tal_assistant/pkg/adkutils"
 
@@ -15,28 +16,14 @@ import (
 
 // QuestionBankGeneratorInput is passed as Prompt in AgentRunRequest.
 type QuestionBankGeneratorInput struct {
-	JobTitle          string
-	JobDescription    string
-	JobRequirements   string
-	CandidateName     string
-	CandidateSummary  string
-	CandidateExperience string
-	CandidateEducation  string
-	CandidateSkills     string
-	UserPrompt          string // optional extra focus from the recruiter
+	EventDataJSON string // Full Workable EventFindResult as JSON string
+	UserPrompt    string // optional extra focus from the recruiter
 }
 
 // QuestionBankGeneratorState holds the session state variables referenced in the
-// instruction template by {job_title}, {job_description}, etc.
+// instruction template.
 type QuestionBankGeneratorState struct {
-	JobTitle            string
-	JobDescription      string
-	JobRequirements     string
-	CandidateName       string
-	CandidateSummary    string
-	CandidateExperience string
-	CandidateEducation  string
-	CandidateSkills     string
+	EventDataJSON string // Full Workable EventFindResult as JSON string
 }
 
 var questionBankQuestionSchema = &genai.Schema{
@@ -114,14 +101,7 @@ func (a *QuestionBankGenerator) NewAgentConfig(m model.LLM) *llmagent.Config {
 
 func (a *QuestionBankGenerator) NewAgentState(state QuestionBankGeneratorState) map[string]any {
 	return map[string]any{
-		"job_title":            state.JobTitle,
-		"job_description":      state.JobDescription,
-		"job_requirements":     state.JobRequirements,
-		"candidate_name":       state.CandidateName,
-		"candidate_summary":    state.CandidateSummary,
-		"candidate_experience": state.CandidateExperience,
-		"candidate_education":  state.CandidateEducation,
-		"candidate_skills":     state.CandidateSkills,
+		"event_data_json": state.EventDataJSON,
 	}
 }
 
@@ -129,16 +109,39 @@ func (a *QuestionBankGenerator) Run(
 	r *runner.Runner,
 	req adkutils.AgentRunRequest,
 ) ([]adkutils.QuestionBankQuestion, error) {
+	log.Printf("[qbgen-agent] Run called for sessionID=%s userID=%s", req.SessionID, req.UserID)
+	
 	input, ok := req.Prompt.(QuestionBankGeneratorInput)
 	if !ok {
-		return nil, fmt.Errorf("invalid prompt type: expected QuestionBankGeneratorInput, got %T", req.Prompt)
+		err := fmt.Errorf("invalid prompt type: expected QuestionBankGeneratorInput, got %T", req.Prompt)
+		log.Printf("[qbgen-agent] ERROR: %v", err)
+		return nil, err
 	}
 
-	promptText := "Generate the interview question bank."
+	promptBuilder := strings.Builder{}
+	promptBuilder.WriteString("Generate the interview question bank based on the following data:\n\n")
+	if input.EventDataJSON != "" {
+		log.Printf("[qbgen-agent] EventDataJSON length: %d bytes", len(input.EventDataJSON))
+		promptBuilder.WriteString("Event Data (JSON):\n```json\n" + input.EventDataJSON + "\n```\n\n")
+	} else {
+		log.Printf("[qbgen-agent] WARNING: EventDataJSON is empty")
+	}
 	if input.UserPrompt != "" {
-		promptText = input.UserPrompt
+		log.Printf("[qbgen-agent] UserPrompt: %s", input.UserPrompt)
+		promptBuilder.WriteString("Additional Focus: " + input.UserPrompt + "\n")
 	}
 
+	promptText := strings.TrimSpace(promptBuilder.String())
+	log.Printf("[qbgen-agent] Built prompt, total length: %d bytes", len(promptText))
+	
+	// Log first 500 chars of prompt for debugging
+	if len(promptText) > 500 {
+		log.Printf("[qbgen-agent] Prompt preview (first 500 chars): %s...", promptText[:500])
+	} else {
+		log.Printf("[qbgen-agent] Full prompt: %s", promptText)
+	}
+
+	log.Printf("[qbgen-agent] Calling agent runner...")
 	events := r.Run(
 		req.Ctx,
 		req.UserID,
@@ -152,21 +155,41 @@ func (a *QuestionBankGenerator) Run(
 		},
 	)
 
+	log.Printf("[qbgen-agent] Processing events from runner...")
 	var sb strings.Builder
+	eventCount := 0
 	for event, err := range events {
 		if err != nil {
+			log.Printf("[qbgen-agent] ERROR in event stream: %v", err)
 			return nil, err
 		}
+		eventCount++
 		if text := adkutils.SessionEventToString(event); text != "" {
 			sb.WriteString(text)
+			log.Printf("[qbgen-agent] Event %d: received %d bytes", eventCount, len(text))
 		}
 	}
+	
+	rawResponse := sb.String()
+	log.Printf("[qbgen-agent] Received %d events, total response length: %d bytes", eventCount, len(rawResponse))
+	
+	// Log the raw response
+	if len(rawResponse) > 1000 {
+		log.Printf("[qbgen-agent] Raw response (first 1000 chars): %s...", rawResponse[:1000])
+	} else {
+		log.Printf("[qbgen-agent] Raw response: %s", rawResponse)
+	}
 
+	log.Printf("[qbgen-agent] Attempting to unmarshal response...")
 	var response struct {
 		Questions []adkutils.QuestionBankQuestion `json:"questions"`
 	}
-	if err := json.Unmarshal([]byte(sb.String()), &response); err != nil {
+	if err := json.Unmarshal([]byte(rawResponse), &response); err != nil {
+		log.Printf("[qbgen-agent] ERROR: unmarshal failed: %v", err)
+		log.Printf("[qbgen-agent] Failed to parse response as JSON. Raw response: %s", rawResponse)
 		return nil, fmt.Errorf("unmarshal question bank: %w", err)
 	}
+	
+	log.Printf("[qbgen-agent] Successfully unmarshaled %d questions", len(response.Questions))
 	return response.Questions, nil
 }

@@ -3,17 +3,18 @@ package questionbankgenerator
 const (
 	agentName        = "question_bank_generator"
 	agentDescription = "generates a full interview question bank from job and candidate data"
-	agentInstructions = `You are an expert technical interviewer. Given the job details and candidate profile below, generate a comprehensive, tailored question bank for the upcoming interview.
+	agentInstructions = `You are an expert technical interviewer. You will receive complete job and candidate data as a JSON object in the following format:
 
-Job Title: {job_title}
-Job Description: {job_description}
-Job Requirements: {job_requirements}
+{event_data_json}
 
-Candidate Name: {candidate_name}
-Candidate Summary: {candidate_summary}
-Experience: {candidate_experience}
-Education: {candidate_education}
-Skills: {candidate_skills}
+The JSON structure contains:
+- "event": The interview event details
+- "job": Full job posting with title, description, requirements, benefits, location, salary, etc.
+- "candidate": Complete candidate profile including name, email, summary, education_entries, experience_entries, skills, social_profiles, resume_url, etc.
+
+Analyze the complete JSON data to generate a comprehensive, tailored question bank for the interview.
+
+If the user message includes an "Additional Focus" section, follow those instructions to adjust the scope, depth, or emphasis of the questions accordingly. The additional focus overrides the default balance when it conflicts.
 
 Rules for each question:
 - "id": unique ID in the format "GEN<3-digit-number>" (e.g. GEN001, GEN002 …).
@@ -26,5 +27,5 @@ Rules for each question:
 - "ideal_answer_keywords": key terms or concepts the ideal answer should include.
 - "pass_treshold": a float between 0.5 and 0.8 reflecting the minimum acceptable answer quality.
 
-Generate between 8 and 15 questions. Cover a balanced mix of categories, weighted toward the most critical requirements of the role. Tailor questions to gaps or highlights in the candidate profile.`
+Generate between 8 and 15 questions. Cover a balanced mix of categories, weighted toward the most critical requirements of the role. Tailor questions to gaps or highlights in the candidate profile by analyzing all available fields in the JSON data.`
 )

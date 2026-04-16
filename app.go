@@ -58,6 +58,8 @@ type App struct {
 	atsClient      atsclient.ATSClientInterface
 	workableClient workableclient.ClientInterface
 
+	cachedEventFindResult *workableclient.EventFindResult // cached workable event find result
+
 	geminiKey string
 	projectID string
 	srtLines  []string
@@ -658,139 +660,98 @@ func (a *App) WorkableInterviewList(memberID string) ([]workableclient.Event, er
 }
 
 // WorkableEventFind fetches a single Workable event by ID along with its full
-// job and candidate details.
+// job and candidate details, caches the result in memory and in Redis.
 func (a *App) WorkableEventFind(eventID string) (*workableclient.EventFindResult, error) {
 	if a.workableClient == nil {
 		return nil, fmt.Errorf("workable client not configured")
 	}
-	return a.workableClient.EventFind(eventID)
+	result, err := a.workableClient.EventFind(eventID)
+	if err != nil {
+		return nil, err
+	}
+	// Cache in memory
+	a.cachedEventFindResult = result
+	// Cache in Redis
+	if data, err := json.Marshal(result); err == nil {
+		if err := a.redisCache.SaveEventData(a.ctx, eventID, data); err != nil {
+			log.Printf("[workable] WARNING: failed to cache EventFindResult in Redis for eventID=%s: %v", eventID, err)
+		} else {
+			log.Printf("[workable] cached EventFindResult in Redis for eventID=%s", eventID)
+		}
+	}
+	return result, nil
 }
 
-// GenerateQuestionBank fetches job+candidate data for the given Workable event,
-// runs the question-bank-generator ADK agent, and persists the result in Redis
-// keyed by eventID. Returns "ok" on success or an error string.
-func (a *App) GenerateQuestionBank(eventID string) string {
+// HasQuestionBank returns true if a question bank has already been generated
+// and stored in Redis for the given eventID. Used by the UI to decide whether
+// to show the "Generate Question Bank" button or the "Start Session" button.
+func (a *App) HasQuestionBank(eventID string) bool {
+	bank, err := a.redisCache.FindQuestionBank(a.ctx, eventID)
+	if err != nil {
+		return false
+	}
+	return len(bank) > 0
+}
+
+// GenerateQuestionBank uses the cached EventFindResult (or fetches it if not cached),
+// runs the question-bank-generator ADK agent with the full JSON data,
+// and persists the result in Redis keyed by eventID. Returns "ok" on success or an error string.
+// userPrompt is an optional recruiter instruction forwarded to the agent (may be empty).
+func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 	if a.workableClient == nil {
 		return "error: workable client not configured"
 	}
 
-	result, err := a.workableClient.EventFind(eventID)
+	// Use cached result: check memory first, then Redis, then fetch from API
+	var result *workableclient.EventFindResult
+	if a.cachedEventFindResult != nil && a.cachedEventFindResult.Event != nil && a.cachedEventFindResult.Event.ID == eventID {
+		log.Printf("[qbgen] using in-memory cached EventFindResult for eventID=%s", eventID)
+		result = a.cachedEventFindResult
+	} else if redisData, err := a.redisCache.FindEventData(a.ctx, eventID); err == nil {
+		log.Printf("[qbgen] using Redis cached EventFindResult for eventID=%s", eventID)
+		var cached workableclient.EventFindResult
+		if jsonErr := json.Unmarshal(redisData, &cached); jsonErr == nil {
+			result = &cached
+			a.cachedEventFindResult = result
+		} else {
+			log.Printf("[qbgen] WARNING: failed to unmarshal Redis event data: %v — fetching fresh", jsonErr)
+		}
+	}
+	if result == nil {
+		log.Printf("[qbgen] fetching EventFindResult from API for eventID=%s", eventID)
+		fetchedResult, err := a.workableClient.EventFind(eventID)
+		if err != nil {
+			return fmt.Sprintf("error: fetch event %s: %v", eventID, err)
+		}
+		result = fetchedResult
+		a.cachedEventFindResult = result
+		// Persist to Redis for future calls
+		if data, marshalErr := json.Marshal(result); marshalErr == nil {
+			_ = a.redisCache.SaveEventData(a.ctx, eventID, data)
+		}
+	}
+
+	// Marshal the full EventFindResult to JSON
+	eventJSON, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return fmt.Sprintf("error: fetch event %s: %v", eventID, err)
+		return fmt.Sprintf("error: marshal event data: %v", err)
 	}
 
-	// Build experience text
-	var expParts []string
-	if result.Candidate != nil {
-		for _, ex := range result.Candidate.ExperienceEntries {
-			part := ""
-			if ex.Title != nil {
-				part += *ex.Title
-			}
-			if ex.Company != nil {
-				part += " @ " + *ex.Company
-			}
-			if ex.StartDate != nil {
-				part += " (" + *ex.StartDate
-				if ex.EndDate != nil {
-					part += " – " + *ex.EndDate
-				} else if ex.Current {
-					part += " – Present"
-				}
-				part += ")"
-			}
-			if ex.Summary != nil {
-				part += ": " + *ex.Summary
-			}
-			if part != "" {
-				expParts = append(expParts, part)
-			}
-		}
-	}
-	experienceText := strings.Join(expParts, "\n")
-
-	// Build education text
-	var eduParts []string
-	if result.Candidate != nil {
-		for _, ed := range result.Candidate.EducationEntries {
-			part := ""
-			if ed.Degree != nil {
-				part += *ed.Degree
-			}
-			if ed.FieldOfStudy != nil {
-				part += " in " + *ed.FieldOfStudy
-			}
-			if ed.School != nil {
-				part += " at " + *ed.School
-			}
-			if ed.EndDate != nil {
-				part += " (" + *ed.EndDate + ")"
-			}
-			if part != "" {
-				eduParts = append(eduParts, part)
-			}
-		}
-	}
-	educationText := strings.Join(eduParts, "\n")
-
-	// Build skills text
-	var skillParts []string
-	if result.Candidate != nil {
-		for _, s := range result.Candidate.Skills {
-			switch v := s.(type) {
-			case string:
-				skillParts = append(skillParts, v)
-			case map[string]interface{}:
-				if name, ok := v["name"].(string); ok {
-					skillParts = append(skillParts, name)
-				}
-			}
-		}
-	}
-	skillsText := strings.Join(skillParts, ", ")
-
-	candidateName := ""
-	candidateSummary := ""
-	if result.Candidate != nil {
-		candidateName = result.Candidate.Name
-		if result.Candidate.Summary != nil {
-			candidateSummary = *result.Candidate.Summary
-		}
-	}
-
-	jobTitle := ""
-	jobDescription := ""
-	jobRequirements := ""
-	if result.Job != nil {
-		jobTitle = result.Job.Title
-		if result.Job.Description != nil {
-			jobDescription = *result.Job.Description
-		}
-		if result.Job.Requirements != nil {
-			jobRequirements = *result.Job.Requirements
-		}
+	log.Printf("[qbgen] Marshaled event data (%d bytes)", len(eventJSON))
+	// Log a truncated version to avoid overwhelming the logs
+	if len(eventJSON) > 500 {
+		log.Printf("[qbgen] Event data (first 500 chars): %s...", string(eventJSON[:500]))
+	} else {
+		log.Printf("[qbgen] Event data: %s", string(eventJSON))
 	}
 
 	input := questionbankgenerator.QuestionBankGeneratorInput{
-		JobTitle:            jobTitle,
-		JobDescription:      jobDescription,
-		JobRequirements:     jobRequirements,
-		CandidateName:       candidateName,
-		CandidateSummary:    candidateSummary,
-		CandidateExperience: experienceText,
-		CandidateEducation:  educationText,
-		CandidateSkills:     skillsText,
+		EventDataJSON: string(eventJSON),
+		UserPrompt:    userPrompt,
 	}
 
 	state := a.adkService.NewQuestionBankGeneratorState(questionbankgenerator.QuestionBankGeneratorState{
-		JobTitle:            jobTitle,
-		JobDescription:      jobDescription,
-		JobRequirements:     jobRequirements,
-		CandidateName:       candidateName,
-		CandidateSummary:    candidateSummary,
-		CandidateExperience: experienceText,
-		CandidateEducation:  educationText,
-		CandidateSkills:     skillsText,
+		EventDataJSON: string(eventJSON),
 	})
 
 	sessionID := fmt.Sprintf("qbgen_%s_%d", eventID, time.Now().UnixMilli())
@@ -803,6 +764,8 @@ func (a *App) GenerateQuestionBank(eventID string) string {
 		return fmt.Sprintf("error: create session: %v", err)
 	}
 
+	log.Printf("[qbgen] calling QuestionBankGeneratorRun — sessionID=%s userID=%s", sessionID, userID)
+	
 	questions, err := a.adkService.QuestionBankGeneratorRun(adkutils.AgentRunRequest{
 		Ctx:       a.ctx,
 		SessionID: sessionID,
@@ -810,14 +773,30 @@ func (a *App) GenerateQuestionBank(eventID string) string {
 		Prompt:    input,
 	})
 	if err != nil {
+		log.Printf("[qbgen] ERROR: agent run failed: %v", err)
 		return fmt.Sprintf("error: run agent: %v", err)
 	}
 
+	log.Printf("[qbgen] agent returned %d questions", len(questions))
+	
+	// Log each question for debugging
+	if len(questions) > 0 {
+		questionsJSON, err := json.MarshalIndent(questions, "", "  ")
+		if err != nil {
+			log.Printf("[qbgen] WARNING: failed to marshal questions for logging: %v", err)
+		} else {
+			log.Printf("[qbgen] Generated questions:\n%s", string(questionsJSON))
+		}
+	} else {
+		log.Printf("[qbgen] WARNING: agent returned empty question list")
+	}
+
 	if err := a.redisCache.SaveQuestionBank(a.ctx, eventID, questions); err != nil {
+		log.Printf("[qbgen] ERROR: failed to save to redis: %v", err)
 		return fmt.Sprintf("error: save to redis: %v", err)
 	}
 
-	log.Printf("[qbgen] saved %d questions to redis for event=%s", len(questions), eventID)
+	log.Printf("[qbgen] SUCCESS: saved %d questions to redis for event=%s", len(questions), eventID)
 	return "ok"
 }
 
@@ -840,9 +819,162 @@ func (a *App) ATSInterviewFind(name string) (*atsclient.InterviewFindResult, err
 	return a.atsClient.InterviewFind(name)
 }
 
+// BeginSession initialises all ADK agent sessions using the pre-cached Workable event
+// data and the question bank already stored in Redis.  It does NOT call the old ATS API.
+// Must be called before StartRecording. Returns "ok" on success or a descriptive error string.
+func (a *App) BeginSession(eventID string) string {
+	log.Printf("[session] BeginSession — eventID=%s", eventID)
+
+	// 1. Resolve event data: memory cache → Redis → Workable API
+	var eventData *workableclient.EventFindResult
+	if a.cachedEventFindResult != nil && a.cachedEventFindResult.Event != nil && a.cachedEventFindResult.Event.ID == eventID {
+		log.Printf("[session] using in-memory cached event data — eventID=%s", eventID)
+		eventData = a.cachedEventFindResult
+	} else if redisData, err := a.redisCache.FindEventData(a.ctx, eventID); err == nil && len(redisData) > 0 {
+		log.Printf("[session] using Redis cached event data — eventID=%s", eventID)
+		var cached workableclient.EventFindResult
+		if jsonErr := json.Unmarshal(redisData, &cached); jsonErr == nil {
+			eventData = &cached
+			a.cachedEventFindResult = eventData
+		} else {
+			log.Printf("[session] WARNING: unmarshal Redis event data failed: %v — fetching fresh", jsonErr)
+		}
+	}
+	if eventData == nil {
+		if a.workableClient == nil {
+			return "error: event data not in cache and workable client not configured"
+		}
+		log.Printf("[session] fetching event data from Workable API — eventID=%s", eventID)
+		fetched, err := a.workableClient.EventFind(eventID)
+		if err != nil {
+			return fmt.Sprintf("error: fetch event %s: %v", eventID, err)
+		}
+		eventData = fetched
+		a.cachedEventFindResult = eventData
+		if data, marshalErr := json.Marshal(eventData); marshalErr == nil {
+			_ = a.redisCache.SaveEventData(a.ctx, eventID, data)
+		}
+	}
+
+	// 2. Load question bank from Redis (must already be generated via GenerateQuestionBank)
+	questionBankMap, err := a.redisCache.FindQuestionBank(a.ctx, eventID)
+	if err != nil || len(questionBankMap) == 0 {
+		return "error: no question bank found — please generate one before starting the session"
+	}
+	questions := make([]adkutils.QuestionBankQuestion, 0, len(questionBankMap))
+	for _, q := range questionBankMap {
+		questions = append(questions, q)
+	}
+	log.Printf("[session] loaded %d questions from Redis — eventID=%s", len(questions), eventID)
+
+	// 3. Determine userID from candidate
+	userID := eventID
+	if c := eventData.Candidate; c != nil {
+		if c.ID != "" {
+			userID = c.ID
+		} else if c.Email != nil && *c.Email != "" {
+			userID = *c.Email
+		}
+	}
+
+	// 4. Cache the first question text so it can be pushed to the UI when recording starts
+	if len(questions) > 0 {
+		a.initialQuestionText = questions[0].Question
+	} else {
+		a.initialQuestionText = ""
+	}
+
+	// 5. Initialise ADK sessions for all agents
+	result := a.StartSession(userID, questions)
+	if result != "ok" {
+		log.Printf("[session] ERROR: StartSession failed: %s", result)
+		return result
+	}
+
+	// 6. Build judging agent interview context from Workable data
+	var candidateName, candidateEmail string
+	var skillNames, expSummaries []string
+
+	if c := eventData.Candidate; c != nil {
+		candidateName = c.Name
+		if c.Email != nil {
+			candidateEmail = *c.Email
+		}
+		// Skills is []any — handle both plain string and {"name":"..."} object forms
+		for _, s := range c.Skills {
+			switch v := s.(type) {
+			case string:
+				if v != "" {
+					skillNames = append(skillNames, v)
+				}
+			case map[string]interface{}:
+				if name, ok := v["name"].(string); ok && name != "" {
+					skillNames = append(skillNames, name)
+				}
+			}
+		}
+		for _, ex := range c.ExperienceEntries {
+			if ex.Title != nil && ex.Company != nil {
+				expSummaries = append(expSummaries, fmt.Sprintf("%s at %s", *ex.Title, *ex.Company))
+			} else if ex.Title != nil {
+				expSummaries = append(expSummaries, *ex.Title)
+			}
+		}
+	}
+
+	var jobTitle, jobDept, jobLocation, jobRequirements string
+	if j := eventData.Job; j != nil {
+		jobTitle = j.Title
+		if j.Department != nil {
+			jobDept = *j.Department
+		}
+		jobLocation = j.Location.LocationStr
+		if j.Requirements != nil {
+			jobRequirements = *j.Requirements
+		}
+	}
+
+	interviewContext := fmt.Sprintf(`# Interview Context
+
+## Candidate
+- Name: %s
+- Email: %s
+- Skills: %s
+- Experience: %s
+
+## Job Position
+- Title: %s
+- Department: %s
+- Location: %s
+
+## Job Requirements
+%s`,
+		candidateName,
+		candidateEmail,
+		strings.Join(skillNames, ", "),
+		strings.Join(expSummaries, "; "),
+		jobTitle,
+		jobDept,
+		jobLocation,
+		jobRequirements,
+	)
+
+	if err := a.adkService.SetJudgingAgentContext(
+		a.ctx, a.sessions.JudgingAgentSessionID, userID, interviewContext,
+	); err != nil {
+		log.Printf("[session] WARNING: SetJudgingAgentContext: %v", err)
+	} else {
+		log.Printf("[session] judging agent context set — interview=%s", a.interviewID)
+	}
+
+	log.Printf("[session] ready — interview=%s user=%s questions=%d", a.interviewID, userID, len(questions))
+	return "ok"
+}
+
 // ATSBeginSession fetches the interview from the ATS, maps its question bank to the
 // ADK format, and initialises the session — all in one call. Must be called before
 // StartRecording. Returns "ok" on success or a descriptive error string.
+// Deprecated: use BeginSession instead, which reads from the Workable cache.
 func (a *App) ATSBeginSession(interviewName string) string {
 	log.Printf("[session] fetching interview %q from ATS", interviewName)
 

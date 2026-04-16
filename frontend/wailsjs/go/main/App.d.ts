@@ -13,11 +13,15 @@ export function ATSInterviewList():Promise<Array<atsclient.InterviewListItem>>;
 
 export function ATSLogin(arg1:string,arg2:string):Promise<main.AppLoginResponse>;
 
+export function BeginSession(arg1:string):Promise<string>;
+
 export function Close():Promise<void>;
 
-export function GenerateQuestionBank(arg1:string):Promise<string>;
+export function GenerateQuestionBank(arg1:string,arg2:string):Promise<string>;
 
 export function GetQuestionBank(arg1:string):Promise<Array<adkutils.QuestionBankQuestion>>;
+
+export function HasQuestionBank(arg1:string):Promise<boolean>;
 
 export function ListAudioDevices():Promise<main.ListSourcesResonse>;
 

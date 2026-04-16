@@ -15,8 +15,8 @@ function renderInterviewFind() {
                 <button class="ghost-btn" onclick="navigate('interview_list')">← Back</button>
                 <h2 class="page-title" id="find-title">Interview Detail</h2>
             </div>
-            <div class="page-header-right">
-                <button class="action-btn action-btn--primary" onclick="goToSession('${esc(interviewId)}')">▶ Start Session</button>
+            <div class="page-header-right" id="find-actions">
+                <span class="table-loading" style="font-size:0.85em">Checking question bank…</span>
             </div>
         </div>
         <div id="interview-find-body" class="find-body">
@@ -33,12 +33,21 @@ async function loadInterviewFind() {
         return
     }
 
+    const interviewId = _selectedInterview
+
     try {
-        const d = await window.go.main.App.ATSInterviewFind(_selectedInterview)
+        // Load interview data and check question bank existence in parallel
+        const [d, hasQBank] = await Promise.all([
+            window.go.main.App.ATSInterviewFind(interviewId),
+            window.go.main.App.HasQuestionBank(interviewId).catch(() => false),
+        ])
 
         // Update page title once data arrives
         const titleEl = document.getElementById('find-title')
         if (titleEl) titleEl.textContent = d.candidate?.name ?? 'Interview Detail'
+
+        // Render action buttons based on question bank status
+        _renderFindActions(interviewId, hasQBank)
 
         body.innerHTML = `
 
@@ -253,6 +262,51 @@ async function loadInterviewFind() {
         `
     } catch (err) {
         body.innerHTML = `<div class="table-error">Failed to load: ${esc(String(err?.message ?? err))}</div>`
+        // Clear loading state from actions area
+        const actions = document.getElementById('find-actions')
+        if (actions) actions.innerHTML = ''
+    }
+}
+
+// Render the header action buttons based on whether a question bank exists
+function _renderFindActions(interviewId, hasQBank) {
+    const actions = document.getElementById('find-actions')
+    if (!actions) return
+
+    if (hasQBank) {
+        actions.innerHTML = `
+            <button class="action-btn" onclick="generateQuestionBank('${esc(interviewId)}')">↺ Regenerate Bank</button>
+            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(interviewId)}')">▶ Start Session</button>
+        `
+    } else {
+        actions.innerHTML = `
+            <button id="gen-qbank-btn" class="action-btn action-btn--primary" onclick="generateQuestionBank('${esc(interviewId)}')">⚡ Generate Question Bank</button>
+        `
+    }
+}
+
+// Generate question bank for the current interview and refresh the action buttons
+async function generateQuestionBank(interviewId) {
+    const btn = document.getElementById('gen-qbank-btn')
+    const actions = document.getElementById('find-actions')
+
+    // Show loading state
+    if (actions) {
+        actions.innerHTML = `<span class="table-loading" style="font-size:0.85em">Generating question bank…</span>`
+    }
+
+    try {
+        const result = await window.go.main.App.GenerateQuestionBank(interviewId)
+        if (result !== 'ok') {
+            showError('Question bank generation failed: ' + result)
+            _renderFindActions(interviewId, false)
+            return
+        }
+        // Success — update buttons to show Start Session
+        _renderFindActions(interviewId, true)
+    } catch (err) {
+        showError('Question bank generation error: ' + String(err?.message ?? err))
+        _renderFindActions(interviewId, false)
     }
 }
 

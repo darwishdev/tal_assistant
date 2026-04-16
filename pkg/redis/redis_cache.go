@@ -16,6 +16,7 @@ const (
 	currentQuestionKeyPrefix = "current:"
 	summaryKeyPrefix         = "summary:"
 	agentResponsesKeyPrefix  = "agent_responses:"
+	eventDataKeyPrefix       = "event:"
 )
 
 // QuestionAnswer is one node in the interview summary tree.
@@ -58,6 +59,10 @@ type AgentResponse struct {
 // ─────────────────────────────────────────────
 
 type RedisCacheInterface interface {
+	// Event data — raw JSON of the Workable EventFindResult
+	SaveEventData(ctx context.Context, eventID string, data []byte) error
+	FindEventData(ctx context.Context, eventID string) ([]byte, error)
+
 	// Question bank — lookup map for agents
 	SaveQuestionBank(ctx context.Context, interviewID string, questions []adkutils.QuestionBankQuestion) error
 	FindQuestionBank(ctx context.Context, interviewID string) (map[string]adkutils.QuestionBankQuestion, error)
@@ -92,11 +97,33 @@ type RedisCacheClient struct {
 func NewRedisCacheClient() *RedisCacheClient {
 	addr := os.Getenv("REDIS_URL")
 	if addr == "" {
-		addr = "localhost:6379"
+		addr = "localhost:6378"
 	}
 	return &RedisCacheClient{
 		client: redis.NewClient(&redis.Options{Addr: addr}),
 	}
+}
+
+// ── Event data ─────────────────────────────────
+// Stores the raw JSON of the Workable EventFindResult so it can be re-used
+// without an additional API call.
+//   Key → event:<eventID>
+
+func (c *RedisCacheClient) SaveEventData(ctx context.Context, eventID string, data []byte) error {
+	key := eventDataKeyPrefix + eventID
+	if err := c.client.Set(ctx, key, data, 0).Err(); err != nil {
+		return fmt.Errorf("save event data for %s: %w", eventID, err)
+	}
+	return nil
+}
+
+func (c *RedisCacheClient) FindEventData(ctx context.Context, eventID string) ([]byte, error) {
+	key := eventDataKeyPrefix + eventID
+	raw, err := c.client.Get(ctx, key).Result()
+	if err != nil {
+		return nil, fmt.Errorf("find event data for %s: %w", eventID, err)
+	}
+	return []byte(raw), nil
 }
 
 // ── Question bank ──────────────────────────────

@@ -1,4 +1,8 @@
+*.exe
+**/*.exe
+**/**/*.exe
 build/bin
+build/bin/
 node_modules
 frontend/dist
 config/app.env

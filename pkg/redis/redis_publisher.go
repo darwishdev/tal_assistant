@@ -87,7 +87,7 @@ type RedisPublisher struct {
 func NewRedisPublisher() *RedisPublisher {
 	addr := os.Getenv("REDIS_URL")
 	if addr == "" {
-		addr = "localhost:6379"
+		addr = "localhost:6378"
 	}
 	return &RedisPublisher{
 		client: redis.NewClient(&redis.Options{Addr: addr}),

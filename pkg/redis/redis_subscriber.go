@@ -34,7 +34,7 @@ type RedisSubscriber struct {
 func NewRedisSubscriber(onSignal func(SignalEvent), onNQI func(NQIEvent)) *RedisSubscriber {
 	addr := os.Getenv("REDIS_URL")
 	if addr == "" {
-		addr = "localhost:6379"
+		addr = "localhost:6378"
 	}
 	nqiCh := os.Getenv("NQI_CHANNEL")
 	if nqiCh == "" {

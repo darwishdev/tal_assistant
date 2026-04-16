@@ -1104,7 +1104,7 @@ html, body {
     border-radius: 5px;
     border: 1px solid var(--line);
     background: rgba(255,255,255,0.03);
-    color: var(--dim);
+    color: white;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 9px;
     font-weight: 500;
@@ -1150,7 +1150,7 @@ html, body {
 .hero-name {
     font-size: 14px;
     font-weight: 500;
-    color: var(--txt);
+    color: #fff;
 }
 
 .hero-meta { display: flex; gap: 12px; }
@@ -1158,7 +1158,7 @@ html, body {
 .hero-meta-item {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 10px;
-    color: var(--dim);
+    color: #fff;
 }
 
 .hero-chips {
@@ -1171,7 +1171,7 @@ html, body {
 .hero-chip {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 9px;
-    color: var(--dim);
+    color: #fff;
     background: rgba(255,255,255,0.04);
     border: 1px solid var(--line);
     border-radius: 4px;
@@ -1310,7 +1310,7 @@ html, body {
 
 .summary-text {
     font-size: 11px;
-    color: rgba(255,255,255,0.5);
+    color: rgba(255, 255, 255, 1);
     line-height: 1.7;
 }
 

@@ -258,6 +258,11 @@ async function loadInterviewList() {
             return
         }
 
+        // Batch-check question banks for all interviews in parallel
+        const qbankFlags = await Promise.all(
+            items.map(i => window.go.main.App.HasQuestionBank(i.id).catch(() => false))
+        )
+
         body.innerHTML = `
             <table class="data-table">
                 <thead>
@@ -271,11 +276,12 @@ async function loadInterviewList() {
                     </tr>
                 </thead>
                 <tbody>
-                    ${items.map(i => {
+                    ${items.map((i, idx) => {
                         const startsAt = new Date(i.starts_at)
                         const endsAt   = new Date(i.ends_at)
                         const dateStr  = startsAt.toLocaleDateString()
                         const timeStr  = `${startsAt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} – ${endsAt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`
+                        const hasQBank = qbankFlags[idx]
                         return `
                     <tr>
                         <td><div class="cell-primary">${esc(i.candidate?.name ?? '')}</div></td>
@@ -285,7 +291,10 @@ async function loadInterviewList() {
                         <td><span class="status-badge status-interview">${esc(i.type ?? '')}</span></td>
                         <td class="cell-actions">
                             <button class="action-btn" onclick="goToFind('${esc(i.id)}')">View</button>
-                            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(i.id)}')">Start</button>
+                            ${hasQBank
+                                ? `<button class="action-btn action-btn--primary" onclick="goToSession('${esc(i.id)}')">▶ Start</button>`
+                                : `<button class="action-btn" style="opacity:0.45;cursor:not-allowed" title="Generate a question bank first" disabled>▶ Start</button>`
+                            }
                         </td>
                     </tr>`
                     }).join('')}
@@ -308,15 +317,15 @@ function goToSession(name) {
 }
 
 function renderInterviewFind() {
+    const interviewId = _selectedInterview || ''
     document.getElementById('router-view').innerHTML = `
         <div class="page-header">
             <div class="page-header-left">
                 <button class="ghost-btn" onclick="navigate('interview_list')">← Back</button>
                 <h2 class="page-title" id="find-title">Interview Detail</h2>
             </div>
-            <div class="page-header-right">
-                <button class="action-btn" id="gen-qbank-btn" onclick="generateQuestionBank('${esc(_selectedInterview)}')">⚡ Generate Question Bank</button>
-                <button class="action-btn action-btn--primary" onclick="goToSession('${_selectedInterview}')">▶ Start Session</button>
+            <div class="page-header-right" id="find-actions">
+                <span class="table-loading" style="font-size:0.85em">Checking…</span>
             </div>
         </div>
         <div id="interview-find-body" class="find-body">
@@ -326,15 +335,37 @@ function renderInterviewFind() {
     loadInterviewFind()
 }
 
+function _renderFindActions(interviewId, hasQBank) {
+    const actions = document.getElementById('find-actions')
+    if (!actions) return
+    if (hasQBank) {
+        actions.innerHTML = `
+            <button class="action-btn" id="gen-qbank-btn" onclick="generateQuestionBank('${esc(interviewId)}')">↺ Regenerate Bank</button>
+            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(interviewId)}')">▶ Start Session</button>
+        `
+    } else {
+        actions.innerHTML = `
+            <button class="action-btn action-btn--primary" id="gen-qbank-btn" onclick="generateQuestionBank('${esc(interviewId)}')">⚡ Generate Question Bank</button>
+        `
+    }
+}
+
 async function loadInterviewFind() {
     const body = document.getElementById('interview-find-body')
     if (!body || !_selectedInterview) {
-        body.innerHTML = '<div class="table-error">No interview selected.</div>'
+        if (body) body.innerHTML = '<div class="table-error">No interview selected.</div>'
         return
     }
 
+    const interviewId = _selectedInterview
+
     try {
-        const d = await window.go.main.App.WorkableEventFind(_selectedInterview)
+        const [d, hasQBank] = await Promise.all([
+            window.go.main.App.WorkableEventFind(interviewId),
+            window.go.main.App.HasQuestionBank(interviewId).catch(() => false),
+        ])
+
+        _renderFindActions(interviewId, hasQBank)
 
         const candidateName = d.candidate?.name ?? d.event?.candidate?.name ?? 'Interview Detail'
         const titleEl = document.getElementById('find-title')
@@ -499,6 +530,8 @@ async function loadInterviewFind() {
         `
     } catch (err) {
         body.innerHTML = `<div class="table-error">Failed to load: ${esc(String(err?.message ?? err))}</div>`
+        const actions = document.getElementById('find-actions')
+        if (actions) actions.innerHTML = ''
     }
 }
 
@@ -509,22 +542,46 @@ function switchTab(name, btn) {
     document.getElementById('tab-' + name)?.classList.add('active')
 }
 
-async function generateQuestionBank(eventID) {
-    const btn = document.getElementById('gen-qbank-btn')
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…' }
+async function generateQuestionBank(eventID, userPrompt = '') {
+    const body = document.getElementById('interview-find-body')
+    const actions = document.getElementById('find-actions')
+
+    if (actions) {
+        actions.innerHTML = `<span class="table-loading" style="font-size:0.85em">⏳ Generating question bank…</span>`
+    }
+
+    // Overlay on top of the existing body — preserves the tab DOM so we can switch to it after
+    let overlay = null
+    if (body) {
+        body.style.position = 'relative'
+        overlay = document.createElement('div')
+        overlay.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--text-muted,#888);background:var(--bg,#111);z-index:10;border-radius:inherit'
+        overlay.innerHTML = `
+            <div class="spinner"></div>
+            <p style="margin:0">AI is generating the question bank — this may take a minute…</p>
+        `
+        body.appendChild(overlay)
+    }
+
+    const removeOverlay = () => {
+        overlay?.remove()
+        if (body) body.style.position = ''
+    }
+
     try {
-        const result = await window.go.main.App.GenerateQuestionBank(eventID)
+        const result = await window.go.main.App.GenerateQuestionBank(eventID, userPrompt)
+        removeOverlay()
         if (result === 'ok') {
-            if (btn) { btn.textContent = '✓ Done' }
-            // auto-switch to questions tab and load
+            _renderFindActions(eventID, true)
             const qTab = document.querySelector('.find-tab:nth-child(3)')
             if (qTab) { switchTab('questions', qTab); loadQuestionBankTab(eventID) }
         } else {
-            if (btn) { btn.disabled = false; btn.textContent = '⚡ Generate Question Bank' }
+            _renderFindActions(eventID, false)
             showError(result)
         }
     } catch (err) {
-        if (btn) { btn.disabled = false; btn.textContent = '⚡ Generate Question Bank' }
+        removeOverlay()
+        _renderFindActions(eventID, false)
         showError('GenerateQuestionBank: ' + (err?.message ?? String(err)))
     }
 }
@@ -537,10 +594,22 @@ async function loadQuestionBankTab(eventID) {
         const questions = await window.go.main.App.GetQuestionBank(eventID)
         if (!questions || questions.length === 0) {
             panel.innerHTML = `
-                <div class="find-section">
-                    <p class="summary-text" style="color:var(--text-muted,#888)">
-                        No question bank yet. Click <strong>⚡ Generate Question Bank</strong> to create one.
+                <div class="find-section" style="max-width:560px;padding-top:8px">
+                    <div class="section-title" style="margin-bottom:10px">Generate Question Bank</div>
+                    <p class="summary-text" style="color:white;margin-bottom:12px">
+                        No question bank yet. Optionally add focus instructions for the AI — e.g. <em>"focus on system design"</em> or <em>"include behavioural questions about leadership"</em>.
                     </p>
+                    <textarea
+                        id="qbank-user-prompt"
+                        class="field-input"
+                        rows="4"
+                        placeholder="Optional: instruct the agent — e.g. focus on backend architecture, skip easy questions, include leadership scenarios…"
+                        style="width:100%;resize:vertical;margin-bottom:12px;font-size:0.85rem;line-height:1.5"
+                    ></textarea>
+                    <button
+                        class="action-btn action-btn--primary"
+                        onclick="generateQuestionBank('${esc(eventID)}', document.getElementById('qbank-user-prompt')?.value?.trim() ?? '')"
+                    >⚡ Generate Question Bank</button>
                 </div>`
             return
         }
@@ -968,8 +1037,8 @@ async function startSessionAndRecord() {
     if (timerEl) timerEl.textContent = 'Loading…'
 
     try {
-        // 1. Fetch interview from ATS, convert question bank, seed Redis
-        const beginResult = await window.go.main.App.ATSBeginSession(_selectedInterview)
+        // 1. Join cached question bank with Workable event data and seed all agent sessions
+        const beginResult = await window.go.main.App.BeginSession(_selectedInterview)
         if (beginResult !== 'ok') {
             showError('Session init failed: ' + beginResult)
             navigate('start_session')
