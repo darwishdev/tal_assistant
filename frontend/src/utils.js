@@ -43,11 +43,13 @@ function showError(msg) {
 // Save login session with TTL (default 24 hours)
 function saveLoginSession(username, password, loginResponse, ttlHours = 24) {
     const expiresAt = Date.now() + (ttlHours * 60 * 60 * 1000)
+    const atsLogin = loginResponse.ats_login || loginResponse.ATSLogin || loginResponse
     const session = {
         username,
         password,
-        fullName: loginResponse.full_name,
-        homePage: loginResponse.home_page,
+        fullName: atsLogin.full_name,
+        homePage: atsLogin.home_page,
+        member: loginResponse.member || loginResponse.Member || null,
         expiresAt
     }
     localStorage.setItem('ats_session', JSON.stringify(session))

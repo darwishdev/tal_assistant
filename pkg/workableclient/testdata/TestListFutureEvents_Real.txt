@@ -1,0 +1,39 @@
+===== REQUEST =====
+GET /spi/v3/events?include_cancelled=false&limit=10&member_id=1c3f84&start_date=2026-04-16T00%3A00%3A00.000Z&type=interview HTTP/1.1
+Host: lucidya.workable.com
+User-Agent: Go-http-client/1.1
+Authorization: Bearer BexiVhSqQG0InFOVf2LGFGldTAZon5yuHlfHD9PHc5s
+Content-Type: application/json
+Accept-Encoding: gzip
+
+
+
+===== RESPONSE =====
+HTTP/2.0 200 OK
+Cache-Control: max-age=0, private, must-revalidate
+Cf-Cache-Status: DYNAMIC
+Cf-Ray: 9ed2d6eeaeb3fa41-MRS
+Content-Type: application/json; charset=utf-8
+Date: Thu, 16 Apr 2026 11:27:13 GMT
+Etag: W/"c4c41cb8c2d9351b2114257fdc2180ae"
+Referrer-Policy: strict-origin-when-cross-origin
+Server: cloudflare
+Set-Cookie: _workable_visitor=BAhJIilkZTI1MzJhMC1hZjQ5LTRhZGItOWQ2Yy1lZDQ0YjJiNjI4OTYGOgZFRg%3D%3D--49469bfed080399613bd1af2b97d82f3201c2990; domain=workable.com; path=/; expires=Mon, 16 Apr 2046 11:27:13 GMT; secure
+Set-Cookie: wmc=%7B%22cookie_id%22%3A%22d24cff36-06aa-4a1e-8fbb-c7fd3a66d36f%22%7D; domain=.workable.com; path=/; expires=Mon, 16 Apr 2046 11:27:13 GMT; secure
+Set-Cookie: __cf_bm=MxWjTUw_aP1Yi.6Z8qC9XUNnIYfqiaR8dULwdKE.cgY-1776338833.7091045-1.0.1.1-2KZ4KeK_a64U_ZZsKI96iZ2xH6OwKsTe2vshS5nNkXT463m8f8JyMkvZ9iR4q5pDj1ny9JxXSNNWrwoHCyBS31oZa1WgsZoIveWMezufH.Vyd.fczgXh1ixF7rSq9r69; HttpOnly; Secure; Path=/; Domain=workable.com; Expires=Thu, 16 Apr 2026 11:57:13 GMT
+Strict-Transport-Security: max-age=15552000; includeSubDomains
+Vary: User-Agent
+X-Content-Type-Options: nosniff
+X-Download-Options: noopen
+X-Frame-Options: SAMEORIGIN
+X-Kb: false
+X-Permitted-Cross-Domain-Policies: none
+X-Rate-Limit-Limit: 10
+X-Rate-Limit-Remaining: 8
+X-Rate-Limit-Reset: 1776338843
+X-Request-Id: 7f42049e-fe93-9a8d-a37e-defe36c9b451
+X-Sv: 3331440021fd765074866ea8ff86fe006dbfc3fbe98e0b3508ae54525b80346d
+X-Ts: 0
+X-Xss-Protection: 1; mode=block
+
+{"events":[{"id":"1001f2f","title":"Screening Interview with Reham Adel - DevOps Engineer","description":"<p>Dear Reham,</p><p>Thank you very much for your interest in joining Lucidya. I'd like to set up a Screening interview with you to discuss the DevOps Engineer role in more detail</p><p>-Position:  DevOps Engineer (Remote Role)</p><p>-Website: <a href=\"https://lucidya.com/\" rel=\"nofollow noreferrer noopener\" class=\"external\">https://lucidya.com/</a></p><p>-Location: Video call.</p><p>-Job Description: <a href=\"https://docs.google.com/document/d/1JBRD-rPwwAteSJZO7Pmb8sHgZ6CaL-iZ6FylVNI1A_g/edit?usp=sharing\" rel=\"nofollow noreferrer noopener\" class=\"external\">JD</a></p><p>We kindly request that you check the connection, camera, and mic before the interview.</p><p>Kindly confirm that you have received this email.</p><p>I look forward to speaking with you!</p><p>Best Regards,</p><p>Esraa Adel</p><p>Talent Acquisition Partner</p>","type":"InterviewEvent","starts_at":"2026-04-16T09:00:00.000Z","ends_at":"2026-04-16T09:30:00.000Z","cancelled":false,"job":{"shortcode":"D2010998E7","title":"DevOps Engineer"},"members":[{"id":"1c3f84","name":"Esraa Adel","type":"Member","status":"accepted"}],"candidate":{"id":"2496b73e","name":"Reham Adel"},"conference":{"type":"google_meet","url":"https://meet.google.com/ain-ugwd-wgb"}},{"id":"1003925","title":"Screening Interview with Mohamed Ahmed Abbas - Senior Backend Software Engineer - Remote","description":"<p>Dear Mohamed,</p><p>Thank you very much for your interest in joining Lucidya. I'd like to set up an Screening interview with you to discuss the Senior Backend Software Engineer - Remote role in more detail</p><p>-Position: Senior Backend Software Engineer - (Remote Role)</p><p>-Website: <a href=\"https://www.google.com/url?q=https://lucidya.com/&amp;sa=D&amp;source=calendar&amp;ust=1762076949178952&amp;usg=AOvVaw0InMnAKV8ExvODqS9laT2q\" rel=\"nofollow noreferrer noopener\" class=\"external\"><u>https://lucidya.com/</u></a></p><p>-Location: Video call.</p><p>-Job Description: <a href=\"https://docs.google.com/document/d/1kQbwu8wqgX1fbSuKYNHV1aq6NrEKg9hvUJld6HdMQ14/edit?usp=sharing\" rel=\"nofollow noreferrer noopener\" class=\"external\">Job Description</a></p><p><strong>We kindly request that you check the connection, camera, and mic before the interview.</strong></p><p><strong>Kindly confirm that you have received this email.</strong><a href=\"https://www.google.com/url?q=https://calendar.google.com/calendar/event?action%3DVIEW%26eid%3DM3VubTNudmFsc3F1djlhNDdwb2pyamFsOXIgYW1hbEBtYXdodWIuaW8%26tok%3DMTUjZXNyYWFAbWF3aHViLmlvM2U2YzVkMzY3YTFkNmU0ZmJhODQwZWY0ZTE0ZDFmZDMxNTcyOTM5ZA%26ctz%3DAsia%252FRiyadh%26hl%3Den%26es%3D1&amp;sa=D&amp;source=calendar&amp;ust=1762076949178952&amp;usg=AOvVaw0G-8SkZu0hOggpU_Ma5UHQ\" rel=\"nofollow noreferrer noopener\" class=\"external\"><u></u></a><a href=\"https://www.google.com/url?q=https://calendly.com/frankie-mawhub/interview&amp;sa=D&amp;source=calendar&amp;ust=1762076949178952&amp;usg=AOvVaw32K1SFledl6TzI85VoceFq\" rel=\"nofollow noreferrer noopener\" class=\"external\"><u></u></a></p><p>I look forward to speaking with you!</p><p>Best Regards,</p><p>Esraa Adel</p><p>Talent Acquisition Partner</p>","type":"InterviewEvent","starts_at":"2026-04-16T09:30:00.000Z","ends_at":"2026-04-16T10:00:00.000Z","cancelled":false,"job":{"shortcode":"EA389D5257","title":"Senior Backend Software Engineer - Remote"},"members":[{"id":"1c3f84","name":"Esraa Adel","type":"Member","status":"accepted"}],"candidate":{"id":"24985f95","name":"Mohamed Ahmed Abbas"},"conference":{"type":"google_meet","url":"https://meet.google.com/vkh-aapk-jup"}},{"id":"1003939","title":"Screening Interview with Amr Elkeleay - Senior Backend Software Engineer - Remote","description":"<p>Dear Amr,</p><p>Thank you very much for your interest in joining Lucidya. I'd like to set up an Screening interview with you to discuss the Senior Backend Software Engineer - Remote role in more detail</p><p>-Position: Senior Backend Software Engineer - (Remote Role)</p><p>-Website: <a href=\"https://www.google.com/url?q=https://lucidya.com/&amp;sa=D&amp;source=calendar&amp;ust=1762076949178952&amp;usg=AOvVaw0InMnAKV8ExvODqS9laT2q\" rel=\"nofollow noreferrer noopener\" class=\"external\"><u>https://lucidya.com/</u></a></p><p>-Location: Video call.</p><p>-Job Description: <a href=\"https://docs.google.com/document/d/1kQbwu8wqgX1fbSuKYNHV1aq6NrEKg9hvUJld6HdMQ14/edit?usp=sharing\" rel=\"nofollow noreferrer noopener\" class=\"external\">Job Description</a></p><p><strong>We kindly request that you check the connection, camera, and mic before the interview.</strong></p><p><strong>Kindly confirm that you have received this email.</strong><a href=\"https://www.google.com/url?q=https://calendar.google.com/calendar/event?action%3DVIEW%26eid%3DM3VubTNudmFsc3F1djlhNDdwb2pyamFsOXIgYW1hbEBtYXdodWIuaW8%26tok%3DMTUjZXNyYWFAbWF3aHViLmlvM2U2YzVkMzY3YTFkNmU0ZmJhODQwZWY0ZTE0ZDFmZDMxNTcyOTM5ZA%26ctz%3DAsia%252FRiyadh%26hl%3Den%26es%3D1&amp;sa=D&amp;source=calendar&amp;ust=1762076949178952&amp;usg=AOvVaw0G-8SkZu0hOggpU_Ma5UHQ\" rel=\"nofollow noreferrer noopener\" class=\"external\"><u></u></a><a href=\"https://www.google.com/url?q=https://calendly.com/frankie-mawhub/interview&amp;sa=D&amp;source=calendar&amp;ust=1762076949178952&amp;usg=AOvVaw32K1SFledl6TzI85VoceFq\" rel=\"nofollow noreferrer noopener\" class=\"external\"><u></u></a></p><p>I look forward to speaking with you!</p><p>Best Regards,</p><p>Esraa Adel</p><p>Talent Acquisition Partner</p>","type":"InterviewEvent","starts_at":"2026-04-16T10:00:00.000Z","ends_at":"2026-04-16T10:30:00.000Z","cancelled":false,"job":{"shortcode":"EA389D5257","title":"Senior Backend Software Engineer - Remote"},"members":[{"id":"1c3f84","name":"Esraa Adel","type":"Member","status":"accepted"}],"candidate":{"id":"249fb014","name":"Amr Elkeleay"},"conference":{"type":"google_meet","url":"https://meet.google.com/odv-dpoy-xqy"}}]}

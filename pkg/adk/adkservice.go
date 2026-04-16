@@ -7,6 +7,7 @@ import (
 	"tal_assistant/pkg/adk/judgingagent"
 	"tal_assistant/pkg/adk/nextquestionextender"
 	"tal_assistant/pkg/adk/nextquestionindicator"
+	"tal_assistant/pkg/adk/questionbankgenerator"
 	"tal_assistant/pkg/adk/signalingagent"
 	"tal_assistant/pkg/adk/signalingagentmapper"
 	"tal_assistant/pkg/adkutils"
@@ -42,6 +43,8 @@ type ADKServiceInterface interface {
 	NewJudgingAgentState(req judgingagent.JudgingAgentState) map[string]any
 	JudgingAgentRun(req adkutils.AgentRunRequest) iter.Seq2[string, error]
 	SetJudgingAgentContext(ctx context.Context, sessionID string, userID string, interviewContext string) error
+	NewQuestionBankGeneratorState(req questionbankgenerator.QuestionBankGeneratorState) map[string]any
+	QuestionBankGeneratorRun(req adkutils.AgentRunRequest) ([]adkutils.QuestionBankQuestion, error)
 	StartSession(ctx context.Context, userID string, questionBank []adkutils.QuestionBankQuestion) (InterviewSessions, error)
 	AppendQuestionToSessions(
 		ctx context.Context,
@@ -72,6 +75,8 @@ type ADKService struct {
 	nextQuestionExtenderRunner    *runner.Runner
 	judgingAgent                  *judgingagent.JudgingAgent
 	judgingAgentRunner            *runner.Runner
+	questionBankGenerator         *questionbankgenerator.QuestionBankGenerator
+	questionBankGeneratorRunner   *runner.Runner
 }
 
 // NewADKService builds the service and wires up all agents.
@@ -163,6 +168,19 @@ func NewADKService(ctx context.Context, geminiApiKey string) (ADKServiceInterfac
 		return nil, fmt.Errorf("error creating runner for judging agent: %w", err)
 	}
 
+	// question bank generator agent
+	qbGenerator := questionbankgenerator.NewQuestionBankGenerator(&geminiProModel)
+	qbGeneratorConfig := qbGenerator.NewAgentConfig(geminiProModel)
+	qbGeneratorRunner, err := NewAgentRunner(
+		ctx,
+		appName,
+		sessionService,
+		*qbGeneratorConfig,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating runner for question bank generator agent: %w", err)
+	}
+
 	return &ADKService{
 		sessionService:            sessionService,
 		geminiLiteModel:           geminiLiteModel,
@@ -179,6 +197,8 @@ func NewADKService(ctx context.Context, geminiApiKey string) (ADKServiceInterfac
 		nextQuestionExtenderRunner:  nextQExtenderRunner,
 		judgingAgent:                judgingAgent,
 		judgingAgentRunner:          judgingAgentRunner,
+		questionBankGenerator:       qbGenerator,
+		questionBankGeneratorRunner: qbGeneratorRunner,
 	}, nil
 }
 func (s *ADKService) SessionUpsert(

@@ -32,6 +32,9 @@ type Config struct {
 
 	ATSBaseURL string `mapstructure:"ATS_BASE_URL"`
 
+	WorkableSubdomain string `mapstructure:"WORKABLE_SUBDOMAIN"`
+	WorkableToken     string `mapstructure:"WORKABLE_TOKEN"`
+
 	RedisAddress string
 }
 

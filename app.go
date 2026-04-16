@@ -13,12 +13,14 @@ import (
 	"strings"
 	"tal_assistant/config"
 	"tal_assistant/pkg/adk"
+	"tal_assistant/pkg/adk/questionbankgenerator"
 	"tal_assistant/pkg/adkutils"
 	"tal_assistant/pkg/atsclient"
 	"tal_assistant/pkg/recording"
 	redispkg "tal_assistant/pkg/redis"
 	"tal_assistant/pkg/stt"
 	"tal_assistant/pkg/timeutils"
+	"tal_assistant/pkg/workableclient"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -53,7 +55,8 @@ type App struct {
 	userID              string
 	initialQuestionText string // first question text, emitted to UI when recording starts
 
-	atsClient atsclient.ATSClientInterface
+	atsClient      atsclient.ATSClientInterface
+	workableClient workableclient.ClientInterface
 
 	geminiKey string
 	projectID string
@@ -94,7 +97,7 @@ func (a *App) startup(ctx context.Context) {
 	// 2. Embedded credentials (compiled into the binary) - skipped in DEV_MODE
 	// 3. Application Default Credentials (fallback for development)
 	var sttService stt.STTServiceInterface
-	
+
 	if cfg.GoogleCredentialsPath != "" {
 		// Try external credentials file first
 		if _, err := os.Stat(cfg.GoogleCredentialsPath); err == nil {
@@ -108,7 +111,7 @@ func (a *App) startup(ctx context.Context) {
 			log.Printf("[startup] External credentials file not found: %s", cfg.GoogleCredentialsPath)
 		}
 	}
-	
+
 	// If external credentials failed or not provided, try embedded credentials (unless in dev mode)
 	if sttService == nil && !cfg.DevMode {
 		embeddedCreds := config.GetEmbeddedCredentials()
@@ -123,7 +126,7 @@ func (a *App) startup(ctx context.Context) {
 	} else if cfg.DevMode {
 		log.Printf("[startup] DEV_MODE enabled - skipping embedded credentials, will use Application Default Credentials")
 	}
-	
+
 	// Final fallback: try Application Default Credentials
 	if sttService == nil {
 		sttService, err = stt.NewSTTService(a.projectID, "")
@@ -135,7 +138,7 @@ func (a *App) startup(ctx context.Context) {
 			log.Printf("[startup] STT service initialized with Application Default Credentials")
 		}
 	}
-	
+
 	a.sttService = sttService
 
 	a.ffmpegService = recording.NewRecordingService()
@@ -151,6 +154,17 @@ func (a *App) startup(ctx context.Context) {
 		log.Printf("ATSClient init error: %v", err)
 	}
 	a.atsClient = atsClient
+
+	if cfg.WorkableSubdomain != "" && cfg.WorkableToken != "" {
+		wc, err := workableclient.New(cfg.WorkableSubdomain, cfg.WorkableToken)
+		if err != nil {
+			log.Printf("WorkableClient init error: %v", err)
+		} else {
+			a.workableClient = wc
+		}
+	} else {
+		log.Println("warning: WORKABLE_SUBDOMAIN or WORKABLE_TOKEN not set, workable client unavailable")
+	}
 
 	publisher := redispkg.NewRedisPublisher()
 	a.redisPublisher = publisher
@@ -566,7 +580,7 @@ func (a *App) ListAudioDevices() (*ListSourcesResonse, error) {
 	var mics, speakers []DeviceSource
 	for _, dev := range audioDevices {
 		src := DeviceSource{
-			ID:         dev.ID, 
+			ID:         dev.ID,
 			Name:       dev.Name,
 			IsDefault:  dev.IsDefault,
 			IsPersonal: dev.IsPersonal,
@@ -596,18 +610,229 @@ func (a *App) ListAudioDevices() (*ListSourcesResonse, error) {
 // ── ATS client — Wails-bound methods ──────────────────────────────────────
 
 // ATSLogin authenticates against the ATS and stores the session cookie.
-// Returns the LoginResponse or an error string.
-func (a *App) ATSLogin(username, password string) (*atsclient.LoginResponse, error) {
-	resp, err := a.atsClient.Login(username, password)
+// Returns the AppLoginResponse or an error string.
+func (a *App) ATSLogin(username, password string) (*AppLoginResponse, error) {
+	atsResp, err := a.atsClient.Login(username, password)
 	if err != nil {
 		return nil, fmt.Errorf("login failed: %w", err)
 	}
-	return resp, nil
+
+	result := &AppLoginResponse{
+		ATSLogin: atsResp,
+	}
+	fmt.Println("workable client", a.workableClient, username)
+	if a.workableClient != nil {
+		opts := workableclient.ListMembersOptions{
+			Email: username,
+			Limit: 1,
+		}
+
+		members, err := a.workableClient.ListMembers(opts)
+		fmt.Println("Members ", members)
+		if err == nil && len(members) > 0 {
+			result.Member = &members[0]
+		} else if err != nil {
+			log.Printf("warning: failed to fetch workable member for %s: %v", username, err)
+		} else {
+			log.Printf("warning: no workable member found for %s", username)
+		}
+	}
+
+	return result, nil
 }
 
 // ATSInterviewList returns all interviews visible to the current session.
 func (a *App) ATSInterviewList() ([]atsclient.InterviewListItem, error) {
 	return a.atsClient.InterviewList()
+}
+
+// WorkableInterviewList returns future events for a given member.
+func (a *App) WorkableInterviewList(memberID string) ([]workableclient.Event, error) {
+	if a.workableClient == nil {
+		return nil, fmt.Errorf("workable client not initialized")
+	}
+	opts := workableclient.ListEventsOptions{
+		MemberID: memberID,
+	}
+	return a.workableClient.ListFutureEvents(opts)
+}
+
+// WorkableEventFind fetches a single Workable event by ID along with its full
+// job and candidate details.
+func (a *App) WorkableEventFind(eventID string) (*workableclient.EventFindResult, error) {
+	if a.workableClient == nil {
+		return nil, fmt.Errorf("workable client not configured")
+	}
+	return a.workableClient.EventFind(eventID)
+}
+
+// GenerateQuestionBank fetches job+candidate data for the given Workable event,
+// runs the question-bank-generator ADK agent, and persists the result in Redis
+// keyed by eventID. Returns "ok" on success or an error string.
+func (a *App) GenerateQuestionBank(eventID string) string {
+	if a.workableClient == nil {
+		return "error: workable client not configured"
+	}
+
+	result, err := a.workableClient.EventFind(eventID)
+	if err != nil {
+		return fmt.Sprintf("error: fetch event %s: %v", eventID, err)
+	}
+
+	// Build experience text
+	var expParts []string
+	if result.Candidate != nil {
+		for _, ex := range result.Candidate.ExperienceEntries {
+			part := ""
+			if ex.Title != nil {
+				part += *ex.Title
+			}
+			if ex.Company != nil {
+				part += " @ " + *ex.Company
+			}
+			if ex.StartDate != nil {
+				part += " (" + *ex.StartDate
+				if ex.EndDate != nil {
+					part += " – " + *ex.EndDate
+				} else if ex.Current {
+					part += " – Present"
+				}
+				part += ")"
+			}
+			if ex.Summary != nil {
+				part += ": " + *ex.Summary
+			}
+			if part != "" {
+				expParts = append(expParts, part)
+			}
+		}
+	}
+	experienceText := strings.Join(expParts, "\n")
+
+	// Build education text
+	var eduParts []string
+	if result.Candidate != nil {
+		for _, ed := range result.Candidate.EducationEntries {
+			part := ""
+			if ed.Degree != nil {
+				part += *ed.Degree
+			}
+			if ed.FieldOfStudy != nil {
+				part += " in " + *ed.FieldOfStudy
+			}
+			if ed.School != nil {
+				part += " at " + *ed.School
+			}
+			if ed.EndDate != nil {
+				part += " (" + *ed.EndDate + ")"
+			}
+			if part != "" {
+				eduParts = append(eduParts, part)
+			}
+		}
+	}
+	educationText := strings.Join(eduParts, "\n")
+
+	// Build skills text
+	var skillParts []string
+	if result.Candidate != nil {
+		for _, s := range result.Candidate.Skills {
+			switch v := s.(type) {
+			case string:
+				skillParts = append(skillParts, v)
+			case map[string]interface{}:
+				if name, ok := v["name"].(string); ok {
+					skillParts = append(skillParts, name)
+				}
+			}
+		}
+	}
+	skillsText := strings.Join(skillParts, ", ")
+
+	candidateName := ""
+	candidateSummary := ""
+	if result.Candidate != nil {
+		candidateName = result.Candidate.Name
+		if result.Candidate.Summary != nil {
+			candidateSummary = *result.Candidate.Summary
+		}
+	}
+
+	jobTitle := ""
+	jobDescription := ""
+	jobRequirements := ""
+	if result.Job != nil {
+		jobTitle = result.Job.Title
+		if result.Job.Description != nil {
+			jobDescription = *result.Job.Description
+		}
+		if result.Job.Requirements != nil {
+			jobRequirements = *result.Job.Requirements
+		}
+	}
+
+	input := questionbankgenerator.QuestionBankGeneratorInput{
+		JobTitle:            jobTitle,
+		JobDescription:      jobDescription,
+		JobRequirements:     jobRequirements,
+		CandidateName:       candidateName,
+		CandidateSummary:    candidateSummary,
+		CandidateExperience: experienceText,
+		CandidateEducation:  educationText,
+		CandidateSkills:     skillsText,
+	}
+
+	state := a.adkService.NewQuestionBankGeneratorState(questionbankgenerator.QuestionBankGeneratorState{
+		JobTitle:            jobTitle,
+		JobDescription:      jobDescription,
+		JobRequirements:     jobRequirements,
+		CandidateName:       candidateName,
+		CandidateSummary:    candidateSummary,
+		CandidateExperience: experienceText,
+		CandidateEducation:  educationText,
+		CandidateSkills:     skillsText,
+	})
+
+	sessionID := fmt.Sprintf("qbgen_%s_%d", eventID, time.Now().UnixMilli())
+	userID := eventID
+	if result.Candidate != nil && result.Candidate.ID != "" {
+		userID = result.Candidate.ID
+	}
+
+	if err := a.adkService.SessionUpsert(a.ctx, sessionID, userID, state); err != nil {
+		return fmt.Sprintf("error: create session: %v", err)
+	}
+
+	questions, err := a.adkService.QuestionBankGeneratorRun(adkutils.AgentRunRequest{
+		Ctx:       a.ctx,
+		SessionID: sessionID,
+		UserID:    userID,
+		Prompt:    input,
+	})
+	if err != nil {
+		return fmt.Sprintf("error: run agent: %v", err)
+	}
+
+	if err := a.redisCache.SaveQuestionBank(a.ctx, eventID, questions); err != nil {
+		return fmt.Sprintf("error: save to redis: %v", err)
+	}
+
+	log.Printf("[qbgen] saved %d questions to redis for event=%s", len(questions), eventID)
+	return "ok"
+}
+
+// GetQuestionBank returns the question bank stored in Redis for the given eventID,
+// as an ordered slice (sorted by ID). Returns nil if no bank exists yet.
+func (a *App) GetQuestionBank(eventID string) ([]adkutils.QuestionBankQuestion, error) {
+	bank, err := a.redisCache.FindQuestionBank(a.ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+	questions := make([]adkutils.QuestionBankQuestion, 0, len(bank))
+	for _, q := range bank {
+		questions = append(questions, q)
+	}
+	return questions, nil
 }
 
 // ATSInterviewFind returns full detail for a single interview by name.
@@ -837,4 +1062,10 @@ func (a *App) ManualEvaluateAnswer() string {
 
 	log.Printf("[manual-eval] signal_mapped published — orchestration pipeline triggered")
 	return "ok"
+}
+
+// AppLoginResponse combines the ATS login response and the Workable member info
+type AppLoginResponse struct {
+	ATSLogin *atsclient.LoginResponse `json:"ats_login"`
+	Member   *workableclient.Member   `json:"member"`
 }
