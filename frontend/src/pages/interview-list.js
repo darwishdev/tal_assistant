@@ -4,7 +4,7 @@ function renderInterviewList() {
     document.getElementById('router-view').innerHTML = `
         <div class="page-header">
             <div class="page-header-left">
-                <h2 class="page-title">Interviews</h2>
+                <h2 class="page-title">Interviews (Workable)</h2>
             </div>
             <div class="page-header-right">
                 <button class="icon-btn" onclick="loadInterviewList()" title="Refresh">↺</button>
@@ -24,10 +24,18 @@ async function loadInterviewList() {
     body.innerHTML = '<div class="table-loading">Loading…</div>'
 
     try {
-        const items = await window.go.main.App.ATSInterviewList()
+        const session = getLoginSession()
+        const memberID = session?.member?.id
+
+        if (!memberID) {
+            body.innerHTML = '<div class="table-error">No Workable member info found in session. Please sign in again.</div>'
+            return
+        }
+
+        const items = await window.go.main.App.WorkableInterviewList(memberID)
 
         if (!items || items.length === 0) {
-            body.innerHTML = '<div class="table-empty">No interviews found.</div>'
+            body.innerHTML = '<div class="table-empty">No future interviews found in Workable.</div>'
             return
         }
 
@@ -36,35 +44,41 @@ async function loadInterviewList() {
                 <thead>
                     <tr>
                         <th>Candidate</th>
-                        <th>Round</th>
+                        <th>Job</th>
                         <th>Scheduled</th>
                         <th>Time</th>
-                        <th>Status</th>
+                        <th>Type</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${items.map(i => `
-                    <tr>
-                        <td>
-                            <div class="cell-primary">${esc(i.candidate_name ?? '')}</div>
-                            <div class="cell-secondary">${esc(i.candidate_email ?? '')}</div>
-                        </td>
-                        <td>${esc(i.interview_round ?? '')}</td>
-                        <td>${esc(i.scheduled_on ?? '')}</td>
-                        <td class="cell-mono">
-                            ${esc((i.from_time ?? '').slice(0, 5))} – ${esc((i.to_time ?? '').slice(0, 5))}
-                        </td>
-                        <td>
-                            <span class="status-badge status-${esc((i.status ?? '').toLowerCase())}">
-                                ${esc(i.status ?? '')}
-                            </span>
-                        </td>
-                        <td class="cell-actions">
-                            <button class="action-btn" onclick="goToFind('${esc(i.name)}')">View</button>
-                            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(i.name)}')">Start</button>
-                        </td>
-                    </tr>`).join('')}
+                    ${items.map(i => {
+                        const startsAt = new Date(i.starts_at)
+                        const endsAt = new Date(i.ends_at)
+                        const dateStr = startsAt.toLocaleDateString()
+                        const timeStr = `${startsAt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${endsAt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+                        
+                        return `
+                        <tr>
+                            <td>
+                                <div class="cell-primary">${esc(i.candidate?.name ?? 'Unknown')}</div>
+                            </td>
+                            <td>
+                                <div class="cell-primary">${esc(i.job?.title ?? 'No Job')}</div>
+                            </td>
+                            <td>${esc(dateStr)}</td>
+                            <td class="cell-mono">${esc(timeStr)}</td>
+                            <td>
+                                <span class="status-badge status-interview">
+                                    ${esc(i.type ?? 'Event')}
+                                </span>
+                            </td>
+                            <td class="cell-actions">
+                                <button class="action-btn" onclick="goToFind('${esc(i.id)}')">View</button>
+                                <button class="action-btn action-btn--primary" onclick="goToSession('${esc(i.id)}')">Start</button>
+                            </td>
+                        </tr>`
+                    }).join('')}
                 </tbody>
             </table>
         `

@@ -22,6 +22,14 @@ export function Close() {
   return window['go']['main']['App']['Close']();
 }
 
+export function GenerateQuestionBank(arg1) {
+  return window['go']['main']['App']['GenerateQuestionBank'](arg1);
+}
+
+export function GetQuestionBank(arg1) {
+  return window['go']['main']['App']['GetQuestionBank'](arg1);
+}
+
 export function ListAudioDevices() {
   return window['go']['main']['App']['ListAudioDevices']();
 }
@@ -48,4 +56,12 @@ export function StartSession(arg1, arg2) {
 
 export function StopRecording() {
   return window['go']['main']['App']['StopRecording']();
+}
+
+export function WorkableEventFind(arg1) {
+  return window['go']['main']['App']['WorkableEventFind'](arg1);
+}
+
+export function WorkableInterviewList(arg1) {
+  return window['go']['main']['App']['WorkableInterviewList'](arg1);
 }

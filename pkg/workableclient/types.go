@@ -170,6 +170,7 @@ type Candidate struct {
 	SocialProfiles   []SocialProfile   `json:"social_profiles,omitempty"`
 	DisqualifiedAt   *string           `json:"disqualified_at,omitempty"`
 	Withdrew         bool              `json:"withdrew,omitempty"`
+	Location         *Location         `json:"location,omitempty"`
 }
 
 type ListCandidatesOptions struct {
@@ -269,6 +270,14 @@ type CreateSubscriptionRequest struct {
 	TargetURL    string
 	StageSlug    string // optional
 	JobShortcode string // optional
+}
+
+// EventFindResult combines a single event with the full job and candidate records
+// referenced by that event.
+type EventFindResult struct {
+	Event     *Event     `json:"event"`
+	Job       *Job       `json:"job"`
+	Candidate *Candidate `json:"candidate"`
 }
 
 // ---------------------------------------------------------------------------

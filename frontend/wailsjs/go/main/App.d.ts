@@ -3,6 +3,7 @@
 import {atsclient} from '../models';
 import {main} from '../models';
 import {adkutils} from '../models';
+import {workableclient} from '../models';
 
 export function ATSBeginSession(arg1:string):Promise<string>;
 
@@ -10,9 +11,13 @@ export function ATSInterviewFind(arg1:string):Promise<atsclient.InterviewFindRes
 
 export function ATSInterviewList():Promise<Array<atsclient.InterviewListItem>>;
 
-export function ATSLogin(arg1:string,arg2:string):Promise<atsclient.LoginResponse>;
+export function ATSLogin(arg1:string,arg2:string):Promise<main.AppLoginResponse>;
 
 export function Close():Promise<void>;
+
+export function GenerateQuestionBank(arg1:string):Promise<string>;
+
+export function GetQuestionBank(arg1:string):Promise<Array<adkutils.QuestionBankQuestion>>;
 
 export function ListAudioDevices():Promise<main.ListSourcesResonse>;
 
@@ -27,3 +32,7 @@ export function StartRecording(arg1:string,arg2:string,arg3:string):Promise<stri
 export function StartSession(arg1:string,arg2:Array<adkutils.QuestionBankQuestion>):Promise<string>;
 
 export function StopRecording():Promise<void>;
+
+export function WorkableEventFind(arg1:string):Promise<workableclient.EventFindResult>;
+
+export function WorkableInterviewList(arg1:string):Promise<Array<workableclient.Event>>;

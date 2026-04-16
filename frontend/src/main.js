@@ -243,11 +243,18 @@ async function loadInterviewList() {
     if (!body) return
     body.innerHTML = '<div class="table-loading">Loading…</div>'
 
+    const session = getLoginSession()
+    const memberID = session?.member?.id
+    if (!memberID) {
+        body.innerHTML = '<div class="table-error">No Workable member found in session. Please sign out and sign in again.</div>'
+        return
+    }
+
     try {
-        const items = await window.go.main.App.ATSInterviewList()
+        const items = await window.go.main.App.WorkableInterviewList(memberID)
 
         if (!items || items.length === 0) {
-            body.innerHTML = '<div class="table-empty">No interviews found.</div>'
+            body.innerHTML = '<div class="table-empty">No upcoming interviews found.</div>'
             return
         }
 
@@ -256,29 +263,32 @@ async function loadInterviewList() {
                 <thead>
                     <tr>
                         <th>Candidate</th>
-                        <th>Round</th>
-                        <th>Scheduled</th>
+                        <th>Job</th>
+                        <th>Date</th>
                         <th>Time</th>
-                        <th>Status</th>
+                        <th>Type</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${items.map(i => `
+                    ${items.map(i => {
+                        const startsAt = new Date(i.starts_at)
+                        const endsAt   = new Date(i.ends_at)
+                        const dateStr  = startsAt.toLocaleDateString()
+                        const timeStr  = `${startsAt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} – ${endsAt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`
+                        return `
                     <tr>
-                        <td>
-                            <div class="cell-primary">${esc(i.candidate_name ?? '')}</div>
-                            <div class="cell-secondary">${esc(i.candidate_email ?? '')}</div>
-                        </td>
-                        <td>${esc(i.interview_round ?? '')}</td>
-                        <td>${esc(i.scheduled_on ?? '')}</td>
-                        <td class="cell-mono">${esc((i.from_time ?? '').slice(0,5))} – ${esc((i.to_time ?? '').slice(0,5))}</td>
-                        <td><span class="status-badge status-${(i.status ?? '').toLowerCase()}">${esc(i.status ?? '')}</span></td>
+                        <td><div class="cell-primary">${esc(i.candidate?.name ?? '')}</div></td>
+                        <td>${esc(i.job?.title ?? '')}</td>
+                        <td>${esc(dateStr)}</td>
+                        <td class="cell-mono">${esc(timeStr)}</td>
+                        <td><span class="status-badge status-interview">${esc(i.type ?? '')}</span></td>
                         <td class="cell-actions">
-                            <button class="action-btn" onclick="goToFind('${esc(i.name)}')">View</button>
-                            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(i.name)}')">Start</button>
+                            <button class="action-btn" onclick="goToFind('${esc(i.id)}')">View</button>
+                            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(i.id)}')">Start</button>
                         </td>
-                    </tr>`).join('')}
+                    </tr>`
+                    }).join('')}
                 </tbody>
             </table>
         `
@@ -305,6 +315,7 @@ function renderInterviewFind() {
                 <h2 class="page-title" id="find-title">Interview Detail</h2>
             </div>
             <div class="page-header-right">
+                <button class="action-btn" id="gen-qbank-btn" onclick="generateQuestionBank('${esc(_selectedInterview)}')">⚡ Generate Question Bank</button>
                 <button class="action-btn action-btn--primary" onclick="goToSession('${_selectedInterview}')">▶ Start Session</button>
             </div>
         </div>
@@ -323,28 +334,39 @@ async function loadInterviewFind() {
     }
 
     try {
-        const d = await window.go.main.App.ATSInterviewFind(_selectedInterview)
+        const d = await window.go.main.App.WorkableEventFind(_selectedInterview)
 
-        // Update header title once we have the name
+        const candidateName = d.candidate?.name ?? d.event?.candidate?.name ?? 'Interview Detail'
         const titleEl = document.getElementById('find-title')
-        if (titleEl) titleEl.textContent = d.candidate?.name ?? 'Interview Detail'
+        if (titleEl) titleEl.textContent = candidateName
+
+        const startsAt  = d.event?.starts_at ? new Date(d.event.starts_at) : null
+        const endsAt    = d.event?.ends_at   ? new Date(d.event.ends_at)   : null
+        const dateStr   = startsAt ? startsAt.toLocaleDateString() : ''
+        const timeStr   = startsAt && endsAt
+            ? `${startsAt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} – ${endsAt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`
+            : ''
+        const status    = d.event?.cancelled ? 'Cancelled' : 'Scheduled'
+        const meetURL   = d.event?.conference?.url ?? ''
+        const jobLoc    = d.job?.location?.location_str ?? d.job?.location?.city ?? ''
 
         body.innerHTML = `
-            <!-- ── Sticky hero bar ── -->
+            <!-- ── Hero bar ── -->
             <div class="find-hero">
                 <div class="hero-left">
-                    <div class="hero-name">${esc(d.candidate?.name ?? '')}</div>
+                    <div class="hero-name">${esc(candidateName)}</div>
                     <div class="hero-meta">
-                        <span class="hero-meta-item">✉ ${esc(d.candidate?.email ?? '')}</span>
+                        ${d.candidate?.email ? `<span class="hero-meta-item">✉ ${esc(d.candidate.email)}</span>` : ''}
                         ${d.candidate?.phone ? `<span class="hero-meta-item">📞 ${esc(d.candidate.phone)}</span>` : ''}
                     </div>
                 </div>
                 <div class="hero-chips">
-                    <span class="status-badge status-${(d.interview?.status ?? '').toLowerCase()}">${esc(d.interview?.status ?? '')}</span>
-                    <span class="hero-chip">📅 ${esc(d.interview?.scheduled_on ?? '')}</span>
-                    <span class="hero-chip">🎯 ${esc(d.round?.name ?? '')}</span>
-                    <span class="hero-chip">💼 ${esc(d.job?.title ?? '')}</span>
-                    <span class="hero-chip">🏢 ${esc(d.job?.department ?? '')} · ${esc(d.job?.location ?? '')}</span>
+                    <span class="status-badge status-${status.toLowerCase()}">${esc(status)}</span>
+                    ${dateStr  ? `<span class="hero-chip">📅 ${esc(dateStr)}</span>` : ''}
+                    ${timeStr  ? `<span class="hero-chip">🕐 ${esc(timeStr)}</span>` : ''}
+                    ${d.job?.title ? `<span class="hero-chip">💼 ${esc(d.job.title)}</span>` : ''}
+                    ${jobLoc ? `<span class="hero-chip">🏢 ${esc(jobLoc)}</span>` : ''}
+                    ${meetURL ? `<a class="hero-chip hero-chip--link" href="${esc(meetURL)}" target="_blank">📹 Join Meeting</a>` : ''}
                 </div>
             </div>
 
@@ -352,10 +374,7 @@ async function loadInterviewFind() {
             <div class="find-tabs">
                 <button class="find-tab active" onclick="switchTab('candidate', this)">Candidate</button>
                 <button class="find-tab" onclick="switchTab('job', this)">Job</button>
-                <button class="find-tab" onclick="switchTab('questions', this)">
-                    Questions
-                    <span class="tab-badge">${d.question_bank?.questions?.length ?? 0}</span>
-                </button>
+                <button class="find-tab" onclick="switchTab('questions', this); loadQuestionBankTab('${esc(_selectedInterview)}')">Questions</button>
             </div>
 
             <!-- ── Tab panels ── -->
@@ -365,65 +384,67 @@ async function loadInterviewFind() {
                 <div id="tab-candidate" class="find-panel active">
                     <div class="find-scroll">
 
+                        <!-- Contact & status info block -->
+                        <div class="find-section">
+                            <div class="section-title">Details</div>
+                            <div class="info-block">
+                                ${d.candidate?.email    ? `<div class="info-row"><span class="info-label">Email</span><span class="info-value">${esc(d.candidate.email)}</span></div>` : ''}
+                                ${d.candidate?.phone    ? `<div class="info-row"><span class="info-label">Phone</span><span class="info-value">${esc(d.candidate.phone)}</span></div>` : ''}
+                                ${d.candidate?.location?.location_str ? `<div class="info-row"><span class="info-label">Location</span><span class="info-value">${esc(d.candidate.location.location_str)}</span></div>` : ''}
+                                ${d.candidate?.stage    ? `<div class="info-row"><span class="info-label">Stage</span><span class="info-value">${esc(d.candidate.stage)}</span></div>` : ''}
+                                ${d.candidate?.disqualified ? `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:var(--red,#e53e3e)">Disqualified — ${esc(d.candidate.disqualification_reason ?? '')}</span></div>` : ''}
+                                ${d.candidate?.resume_url ? `<div class="info-row"><span class="info-label">Resume</span><span class="info-value"><a href="${esc(d.candidate.resume_url)}" target="_blank">Download PDF</a></span></div>` : ''}
+                            </div>
+                        </div>
+
+                        ${d.candidate?.social_profiles?.length ? `
+                        <div class="find-section">
+                            <div class="section-title">Profiles</div>
+                            <div class="skill-tags">
+                                ${d.candidate.social_profiles.map(p => `<a class="skill-tag" href="${esc(p.url)}" target="_blank">${esc(p.name)}</a>`).join('')}
+                            </div>
+                        </div>` : ''}
+
+                        ${d.candidate?.summary ? `
                         <div class="find-section">
                             <div class="section-title">Summary</div>
-                            <p class="summary-text">${esc(d.candidate?.summary ?? '')}</p>
-                        </div>
+                            <p class="summary-text">${esc(d.candidate.summary)}</p>
+                        </div>` : ''}
 
                         ${d.candidate?.skills?.length ? `
                         <div class="find-section">
                             <div class="section-title">Skills</div>
                             <div class="skill-tags">
-                                ${d.candidate.skills.map(s => `<span class="skill-tag">${esc(s)}</span>`).join('')}
+                                ${d.candidate.skills.map(s => `<span class="skill-tag">${esc(typeof s === 'string' ? s : s?.name ?? '')}</span>`).join('')}
                             </div>
                         </div>` : ''}
 
-                        ${d.candidate?.experience?.length ? `
+                        ${d.candidate?.experience_entries?.length ? `
                         <div class="find-section">
                             <div class="section-title">Experience</div>
                             <div class="exp-list">
-                                ${d.candidate.experience.map(ex => `
+                                ${d.candidate.experience_entries.map(ex => `
                                 <div class="exp-item">
                                     <div class="exp-header">
-                                        <span class="exp-role">${esc(ex.role ?? '')}</span>
-                                        <span class="exp-dot">·</span>
-                                        <span class="exp-company">${esc(ex.company ?? '')}</span>
-                                        <span class="exp-dates">${esc(ex.from ?? '')}${ex.to ? ' – ' + esc(ex.to) : ''}</span>
+                                        <span class="exp-role">${esc(ex.title ?? '')}</span>
+                                        ${ex.company ? `<span class="exp-dot">·</span><span class="exp-company">${esc(ex.company)}</span>` : ''}
+                                        <span class="exp-dates">${esc(ex.start_date ?? '')}${ex.end_date ? ' – ' + esc(ex.end_date) : ex.current ? ' – Present' : ''}</span>
                                     </div>
-                                    ${ex.responsibilities?.length ? `
-                                    <ul class="exp-resp">
-                                        ${ex.responsibilities.map(r => `<li>${esc(r)}</li>`).join('')}
-                                    </ul>` : ''}
+                                    ${ex.summary ? `<p class="exp-summary">${esc(ex.summary)}</p>` : ''}
                                 </div>`).join('')}
                             </div>
                         </div>` : ''}
 
-                        ${d.candidate?.education?.length ? `
+                        ${d.candidate?.education_entries?.length ? `
                         <div class="find-section">
                             <div class="section-title">Education</div>
                             <div class="edu-list">
-                                ${d.candidate.education.map(e => `
+                                ${d.candidate.education_entries.map(e => `
                                 <div class="edu-item">
-                                    <span class="edu-degree">${esc(e.degree ?? '')}</span>
-                                    <span class="edu-inst">${esc(e.institution ?? '')}</span>
-                                    ${e.year ? `<span class="edu-year cell-mono">${esc(e.year)}</span>` : ''}
-                                </div>`).join('')}
-                            </div>
-                        </div>` : ''}
-
-                        ${d.candidate?.projects?.length ? `
-                        <div class="find-section">
-                            <div class="section-title">Projects</div>
-                            <div class="exp-list">
-                                ${d.candidate.projects.map(p => `
-                                <div class="exp-item">
-                                    <div class="exp-header">
-                                        <span class="exp-role cell-mono">${esc(p.name ?? '')}</span>
-                                    </div>
-                                    ${p.description?.length ? `
-                                    <ul class="exp-resp">
-                                        ${p.description.map(line => `<li>${esc(line)}</li>`).join('')}
-                                    </ul>` : ''}
+                                    ${e.degree        ? `<span class="edu-degree">${esc(e.degree)}</span>` : ''}
+                                    ${e.school        ? `<span class="edu-inst">${esc(e.school)}</span>` : ''}
+                                    ${e.field_of_study ? `<span class="edu-year">${esc(e.field_of_study)}</span>` : ''}
+                                    ${e.end_date      ? `<span class="edu-year cell-mono">${esc(e.end_date)}</span>` : ''}
                                 </div>`).join('')}
                             </div>
                         </div>` : ''}
@@ -439,32 +460,29 @@ async function loadInterviewFind() {
                             <div class="section-title">Role</div>
                             <div class="info-block">
                                 <div class="info-row"><span class="info-label">Title</span><span class="info-value">${esc(d.job?.title ?? '')}</span></div>
-                                <div class="info-row"><span class="info-label">Department</span><span class="info-value">${esc(d.job?.department ?? '')}</span></div>
-                                <div class="info-row"><span class="info-label">Location</span><span class="info-value">${esc(d.job?.location ?? '')}</span></div>
-                                <div class="info-row"><span class="info-label">Pipeline Step</span><span class="info-value">${esc(d.job?.current_pipeline_step?.name ?? '')}</span></div>
+                                ${d.job?.department ? `<div class="info-row"><span class="info-label">Department</span><span class="info-value">${esc(d.job.department)}</span></div>` : ''}
+                                ${jobLoc ? `<div class="info-row"><span class="info-label">Location</span><span class="info-value">${esc(jobLoc)}</span></div>` : ''}
+                                ${d.job?.workplace_type ? `<div class="info-row"><span class="info-label">Workplace</span><span class="info-value">${esc(d.job.workplace_type)}</span></div>` : ''}
+                                ${d.job?.employment_type ? `<div class="info-row"><span class="info-label">Type</span><span class="info-value">${esc(d.job.employment_type)}</span></div>` : ''}
                             </div>
                         </div>
 
-                        ${d.job?.description?.length ? d.job.description.map(sec => `
+                        ${d.job?.description ? `
                         <div class="find-section">
-                            <div class="section-title">${esc(sec.title ?? '')}</div>
-                            ${sec.description ? `<p class="summary-text">${esc(sec.description)}</p>` : ''}
-                            ${sec.points?.length ? `
-                            <ul class="job-points">
-                                ${sec.points.map(pt => `<li>${esc(pt)}</li>`).join('')}
-                            </ul>` : ''}
-                        </div>`).join('') : ''}
+                            <div class="section-title">Description</div>
+                            <div class="summary-text">${d.job.description}</div>
+                        </div>` : ''}
 
-                        ${d.round?.expected_skills?.length ? `
+                        ${d.job?.requirements ? `
                         <div class="find-section">
-                            <div class="section-title">Evaluation Areas</div>
-                            <div class="eval-grid">
-                                ${d.round.expected_skills.map(s => `
-                                <div class="eval-item">
-                                    <div class="eval-skill">${esc(s.skill ?? '')}</div>
-                                    <div class="eval-desc">${esc(s.description ?? '')}</div>
-                                </div>`).join('')}
-                            </div>
+                            <div class="section-title">Requirements</div>
+                            <div class="summary-text">${d.job.requirements}</div>
+                        </div>` : ''}
+
+                        ${d.job?.benefits ? `
+                        <div class="find-section">
+                            <div class="section-title">Benefits</div>
+                            <div class="summary-text">${d.job.benefits}</div>
                         </div>` : ''}
 
                     </div>
@@ -472,50 +490,8 @@ async function loadInterviewFind() {
 
                 <!-- QUESTIONS -->
                 <div id="tab-questions" class="find-panel">
-                    <div class="find-scroll">
-
-                        ${d.question_bank?.focus_areas?.length ? `
-                        <div class="find-section">
-                            <div class="section-title">Focus Areas</div>
-                            <div class="skill-tags">
-                                ${d.question_bank.focus_areas.map(a => `<span class="skill-tag">${esc(a)}</span>`).join('')}
-                            </div>
-                        </div>` : ''}
-
-                        ${d.question_bank?.questions?.length ? `
-                        <div class="find-section">
-                            <div class="section-title">
-                                Questions
-                                <span class="section-badge">${d.question_bank.questions.length}</span>
-                            </div>
-                            <div class="qbank-list">
-                                ${d.question_bank.questions.map((q, idx) => `
-                                <div class="qbank-item">
-                                    <div class="qbank-meta">
-                                        <span class="qbank-idx">${idx + 1}</span>
-                                        <span class="skill-tag">${esc(q.category ?? '')}</span>
-                                        <span class="diff-badge diff-${(q.difficulty ?? '').toLowerCase()}">${esc(q.difficulty ?? '')}</span>
-                                        <span class="qbank-time cell-mono">~${q.estimated_time_minutes ?? '?'}m</span>
-                                        <span class="qbank-threshold cell-mono">pass ≥${Math.round((q.pass_threshold ?? 0) * 100)}%</span>
-                                    </div>
-                                    <div class="qbank-q">${esc(q.question ?? '')}</div>
-                                    ${q.ideal_answer_keywords?.length ? `
-                                    <div class="qbank-keywords">
-                                        <span class="kw-label">keywords</span>
-                                        ${q.ideal_answer_keywords.map(k => `<span class="kw-tag">${esc(k)}</span>`).join('')}
-                                    </div>` : ''}
-                                    ${q.followup_triggers?.length ? `
-                                    <div class="qbank-followups">
-                                        ${q.followup_triggers.map(f => `
-                                        <div class="followup-row">
-                                            <span class="followup-cond">${esc(f.condition ?? '')}</span>
-                                            <span class="followup-q">↳ ${esc(f.follow_up ?? '')}</span>
-                                        </div>`).join('')}
-                                    </div>` : ''}
-                                </div>`).join('')}
-                            </div>
-                        </div>` : ''}
-
+                    <div class="find-scroll" id="questions-panel-body">
+                        <div class="table-loading">Click the tab to load questions…</div>
                     </div>
                 </div>
 
@@ -531,6 +507,65 @@ function switchTab(name, btn) {
     document.querySelectorAll('.find-panel').forEach(p => p.classList.remove('active'))
     btn.classList.add('active')
     document.getElementById('tab-' + name)?.classList.add('active')
+}
+
+async function generateQuestionBank(eventID) {
+    const btn = document.getElementById('gen-qbank-btn')
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…' }
+    try {
+        const result = await window.go.main.App.GenerateQuestionBank(eventID)
+        if (result === 'ok') {
+            if (btn) { btn.textContent = '✓ Done' }
+            // auto-switch to questions tab and load
+            const qTab = document.querySelector('.find-tab:nth-child(3)')
+            if (qTab) { switchTab('questions', qTab); loadQuestionBankTab(eventID) }
+        } else {
+            if (btn) { btn.disabled = false; btn.textContent = '⚡ Generate Question Bank' }
+            showError(result)
+        }
+    } catch (err) {
+        if (btn) { btn.disabled = false; btn.textContent = '⚡ Generate Question Bank' }
+        showError('GenerateQuestionBank: ' + (err?.message ?? String(err)))
+    }
+}
+
+async function loadQuestionBankTab(eventID) {
+    const panel = document.getElementById('questions-panel-body')
+    if (!panel) return
+    panel.innerHTML = '<div class="table-loading">Loading…</div>'
+    try {
+        const questions = await window.go.main.App.GetQuestionBank(eventID)
+        if (!questions || questions.length === 0) {
+            panel.innerHTML = `
+                <div class="find-section">
+                    <p class="summary-text" style="color:var(--text-muted,#888)">
+                        No question bank yet. Click <strong>⚡ Generate Question Bank</strong> to create one.
+                    </p>
+                </div>`
+            return
+        }
+        panel.innerHTML = questions.map((q, i) => `
+            <div class="find-section">
+                <div class="section-title">
+                    <span class="cell-mono" style="font-size:0.75rem;margin-right:8px">${esc(q.id ?? `Q${i+1}`)}</span>
+                    <span class="skill-tag">${esc(q.category ?? '')}</span>
+                    <span class="skill-tag">${esc(q.difficulty ?? '')}</span>
+                    <span class="skill-tag" style="background:var(--bg3,#2a2a2a)">~${q.estimated_time_minutes ?? '?'} min</span>
+                </div>
+                <p class="summary-text" style="font-weight:500;margin-bottom:8px">${esc(q.question ?? '')}</p>
+                ${q.ideal_answer_keywords ? `<p class="summary-text" style="font-size:0.8rem;color:var(--text-muted,#888)"><em>Keywords:</em> ${esc(q.ideal_answer_keywords)}</p>` : ''}
+                ${q.evaluation_criteria?.length ? `
+                <div style="margin-top:6px">
+                    ${q.evaluation_criteria.map(c => `
+                    <div class="info-block" style="margin-bottom:4px">
+                        <div class="info-row"><span class="info-label">Must mention</span><span class="info-value">${esc(c.must_mention ?? '')}</span></div>
+                        ${c.bonus_points ? `<div class="info-row"><span class="info-label">Bonus</span><span class="info-value">${esc(c.bonus_points)}</span></div>` : ''}
+                    </div>`).join('')}
+                </div>` : ''}
+            </div>`).join('')
+    } catch (err) {
+        panel.innerHTML = `<div class="table-error">Failed to load: ${esc(String(err?.message ?? err))}</div>`
+    }
 }
 
 function renderStartSession() {
@@ -1350,8 +1385,9 @@ function pad(n, l = 2) { return String(n).padStart(l, '0') }
 function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
 function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
 Object.assign(window, {
-    submitLogin, navigate, loadInterviewList,
+    submitLogin, navigate, logout, loadInterviewList,
     goToFind, goToSession, switchTab,
     startSessionAndRecord, toggleRec, toggleHistoryMode, toggleSummaryView,
     inferNextQuestion, manualEvaluateAnswer, loadAudioDevices,
+    generateQuestionBank, loadQuestionBankTab,
 })

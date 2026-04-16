@@ -67,6 +67,8 @@ type ClientInterface interface {
 	// Events
 	ListEvents(opts ListEventsOptions) ([]Event, error)
 	ListFutureEvents(opts ListEventsOptions) ([]Event, error)
+	GetEvent(eventID string) (*Event, error)
+	EventFind(eventID string) (*EventFindResult, error)
 
 	// Members
 	ListMembers(opts ListMembersOptions) ([]Member, error)
@@ -139,13 +141,12 @@ func (c *Client) ListJobs(opts ListJobsOptions) ([]Job, error) {
 }
 
 func (c *Client) GetJob(shortcode string) (*Job, error) {
-	var env struct {
-		Job Job `json:"job"`
-	}
-	if err := c.get("jobs/"+shortcode, nil, &env); err != nil {
+	var job Job
+
+	if err := c.get("jobs/"+shortcode, nil, &job); err != nil {
 		return nil, err
 	}
-	return &env.Job, nil
+	return &job, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -224,26 +225,24 @@ func (c *Client) ListEvents(opts ListEventsOptions) ([]Event, error) {
 	}
 	params.Set("limit", strconv.Itoa(limit))
 
-	eventType := opts.EventType
-	if eventType == "" {
-		eventType = "interview"
-	}
-	params.Set("type", eventType)
+	// if opts.EventType != "" {
+	// 	params.Set("type", opts.EventType)
+	// }
 
-	if opts.IncludeCancelled {
-		params.Set("include_cancelled", "true")
-	} else {
-		params.Set("include_cancelled", "false")
-	}
-	if opts.SinceID != "" {
-		params.Set("since_id", opts.SinceID)
-	}
+	// if opts.IncludeCancelled {
+	// 	params.Set("include_cancelled", "true")
+	// } else {
+	// 	params.Set("include_cancelled", "false")
+	// }
+	// if opts.SinceID != "" {
+	// 	params.Set("since_id", opts.SinceID)
+	// }
 	if opts.StartDate != "" {
 		params.Set("start_date", opts.StartDate)
 	}
-	if opts.EndDate != "" {
-		params.Set("end_date", opts.EndDate)
-	}
+	// if opts.EndDate != "" {
+	// 	params.Set("end_date", opts.EndDate)
+	// }
 	if opts.MemberID != "" {
 		params.Set("member_id", opts.MemberID)
 	}
@@ -252,27 +251,68 @@ func (c *Client) ListEvents(opts ListEventsOptions) ([]Event, error) {
 }
 
 func (c *Client) ListFutureEvents(opts ListEventsOptions) ([]Event, error) {
-	now := time.Now().UTC()
-	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	opts.StartDate = startOfToday.Format("2006-01-02T15:04:05.000Z")
+	today := time.Now().UTC()
+	opts.StartDate = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC).
+		Format("2006-01-02")
+	return c.ListEvents(opts)
+}
 
-	events, err := c.ListEvents(opts)
-	if err != nil {
+func (c *Client) GetEvent(eventID string) (*Event, error) {
+	var event Event
+	if err := c.get("events/"+eventID, nil, &event); err != nil {
 		return nil, err
 	}
+	return &event, nil
+}
 
-	var futureEvents []Event
-	for _, ev := range events {
-		endTime, err := time.Parse(time.RFC3339, ev.EndsAt)
-		if err != nil {
-			futureEvents = append(futureEvents, ev)
-			continue
-		}
-		if endTime.After(now) {
-			futureEvents = append(futureEvents, ev)
-		}
+// EventFind fetches a single event by ID, then concurrently fetches the full
+// Job and Candidate records referenced by that event. The three results are
+// combined into an EventFindResult.
+func (c *Client) EventFind(eventID string) (*EventFindResult, error) {
+
+	event, err := c.GetEvent(eventID)
+	if err != nil {
+		return nil, fmt.Errorf("EventFind: get event %q: %w", eventID, err)
 	}
-	return futureEvents, nil
+	jobShortcode := event.Job["shortcode"]
+	candidateID := event.Candidate["id"]
+
+	result := &EventFindResult{Event: event}
+
+	type fetchErr struct{ err error }
+	jobCh := make(chan fetchErr, 1)
+	candCh := make(chan fetchErr, 1)
+
+	go func() {
+		if jobShortcode == "" {
+			jobCh <- fetchErr{}
+			return
+		}
+		fmt.Println("event find for ", jobShortcode)
+		job, err := c.GetJob(jobShortcode)
+		fmt.Printf("event find for %v", eventID)
+		result.Job = job
+		jobCh <- fetchErr{err}
+	}()
+
+	go func() {
+		if jobShortcode == "" || candidateID == "" {
+			candCh <- fetchErr{}
+			return
+		}
+		candidate, err := c.GetCandidate(jobShortcode, candidateID)
+		result.Candidate = candidate
+		candCh <- fetchErr{err}
+	}()
+
+	if fe := <-jobCh; fe.err != nil {
+		return nil, fmt.Errorf("EventFind: get job %q: %w", jobShortcode, fe.err)
+	}
+	if fe := <-candCh; fe.err != nil {
+		return nil, fmt.Errorf("EventFind: get candidate %q: %w", candidateID, fe.err)
+	}
+
+	return result, nil
 }
 
 // ---------------------------------------------------------------------------
