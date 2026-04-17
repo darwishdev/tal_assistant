@@ -5,13 +5,13 @@
 !include "FileFunc.nsh"
 
 !ifndef INFO_PROJECTNAME
-    !define INFO_PROJECTNAME "interview-overlay"
+    !define INFO_PROJECTNAME "tal-interview-assistant"
 !endif
 !ifndef INFO_COMPANYNAME
-    !define INFO_COMPANYNAME "interview-overlay"
+    !define INFO_COMPANYNAME "tal-interview-assistant"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "interview-overlay"
+    !define INFO_PRODUCTNAME "tal-interview-assistant"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "1.0.0"

@@ -155,12 +155,12 @@ func TestOrchestratorIntegration(t *testing.T) {
 		t.Fatalf("NewADKService: %v", err)
 	}
 
-	cache := redispkg.NewRedisCacheClient()
-	publisher := redispkg.NewRedisPublisher()
+	cache := redispkg.NewRedisCacheClient("")
+	publisher := redispkg.NewRedisPublisher("")
 	emitToUi := func(event string, data interface{}) {
 		fmt.Printf("emitted to ui event :%s , data : %v", event, data)
 	}
-	subscriber := redispkg.NewOrchestrationSubscriber(adkSvc, publisher, cache, emitToUi)
+	subscriber := redispkg.NewOrchestrationSubscriber("", adkSvc, publisher, cache, emitToUi)
 
 	// ── unique IDs for this run ───────────────
 	interviewID := fmt.Sprintf("test_%d", time.Now().UnixMilli())

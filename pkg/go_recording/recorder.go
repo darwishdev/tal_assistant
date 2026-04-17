@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,6 +64,10 @@ type Options struct {
 	// AudioStream, if non-nil, receives raw audio (converted/merged by ffmpeg).
 	// This is mutually exclusive with Screen (ffmpeg can't stream MP4).
 	AudioStream io.Writer
+
+	// FFmpegLog, if non-nil, receives all ffmpeg stderr output.
+	// Defaults to os.Stderr when nil.
+	FFmpegLog io.Writer
 }
 
 // Recording is returned by Stop.
@@ -103,8 +108,9 @@ type Recorder struct {
 }
 
 type ffmpegProc struct {
-	pipe io.WriteCloser
-	cmd  *exec.Cmd
+	pipe      io.WriteCloser
+	stdinPipe io.WriteCloser
+	cmd       *exec.Cmd
 }
 
 // ffmpegExe returns the path to the ffmpeg executable.
@@ -220,16 +226,20 @@ func (r *Recorder) Start() error {
 // Stop ends the recording, finalises all output files and returns the result.
 func (r *Recorder) Stop() (*Recording, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if !r.active {
+		r.mu.Unlock()
 		return nil, fmt.Errorf("recorder is not running")
 	}
 	r.active = false
+	r.mu.Unlock()
 
 	close(r.quit)
+	
+	// Close pipes and tell ffmpeg to stop so any blocked writes in capture goroutines are interrupted
+	r.stopFFmpeg()
+	
 	r.wg.Wait()
 
-	r.stopFFmpeg()
 	com.CoUninitialize()
 
 	return &Recording{
@@ -698,12 +708,18 @@ func (r *Recorder) launchAudioFFmpeg(
 		args = append(args, "-i", "desktop")
 	}
 
-	// Audio input from stdin (pipe:0).
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(fmt.Sprintf("tcp listen failed: %v", err))
+	}
+	addr := l.Addr().String()
+
+	// Audio input from TCP socket.
 	args = append(args,
 		"-f", "f32le",
 		"-ar", fmt.Sprintf("%d", audioFmt.Format.SamplesPerSec),
 		"-ac", fmt.Sprintf("%d", audioFmt.Format.Channels),
-		"-i", "pipe:0",
+		"-i", "tcp://"+addr,
 	)
 
 	if stream != nil {
@@ -726,7 +742,19 @@ func (r *Recorder) launchAudioFFmpeg(
 			"-map", "0:v", "-map", "1:a",
 			"-c:v", "libx264", "-preset", preset,
 			"-crf", fmt.Sprintf("%d", quality),
+			"-pix_fmt", "yuv420p", // Ensure compatibility with standard players
 			"-c:a", "aac", "-b:a", sink.Bitrate,
+			// Force a keyframe every second so fragment boundaries are
+			// frequent and each flush covers at most ~1 s of video.
+			"-g", fmt.Sprintf("%d", r.opts.Framerate),
+			"-keyint_min", fmt.Sprintf("%d", r.opts.Framerate),
+			// frag_keyframe: new fragment at every keyframe (decodable on its own).
+			// empty_moov:    write a valid moov atom at file-open time.
+			// default_base_moof: improves compatibility with strict players.
+			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+			// Flush each completed fragment to the muxer immediately so
+			// it reaches disk even if ffmpeg is killed shortly after.
+			"-fflags", "+flush_packets",
 			"-shortest",
 			output,
 		)
@@ -738,24 +766,67 @@ func (r *Recorder) launchAudioFFmpeg(
 	}
 
 	cmd := exec.Command(ffmpegExe(), args...)
-	cmd.Stderr = os.Stderr
+	if r.opts.FFmpegLog != nil {
+		cmd.Stderr = r.opts.FFmpegLog
+	} else {
+		cmd.Stderr = os.Stderr
+	}
 	if stream != nil {
 		cmd.Stdout = stream
 	}
-	pipe, err := cmd.StdinPipe()
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		panic(fmt.Sprintf("StdinPipe: %v", err))
 	}
 	if err = cmd.Start(); err != nil {
 		panic(fmt.Sprintf("ffmpeg start: %v", err))
 	}
-	return &ffmpegProc{pipe: pipe, cmd: cmd}
+
+	pr, pw := io.Pipe()
+	go func() {
+		defer l.Close()
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		io.Copy(conn, pr)
+	}()
+
+	return &ffmpegProc{
+		pipe:      pw,
+		stdinPipe: stdin,
+		cmd:       cmd,
+	}
 }
 
 func (r *Recorder) stopFFmpeg() {
 	for _, p := range r.procs {
+		// Close audio pipe to signal EOF to the TCP listener
 		p.pipe.Close()
-		p.cmd.Wait()
+
+		// Send 'q' to gracefully stop ffmpeg and finalise the MP4
+		if p.stdinPipe != nil {
+			_, _ = p.stdinPipe.Write([]byte("q\n"))
+			p.stdinPipe.Close()
+		}
+
+		// Wait for ffmpeg to finalise, but don't block forever.
+		// gdigrab (live video) can delay the shutdown by up to a frame
+		// interval; if ffmpeg still hasn't exited after 8 s, force-kill it.
+		// With frag_keyframe+empty_moov the fragments already flushed
+		// remain playable even after a forced kill.
+		done := make(chan struct{})
+		go func(cmd *exec.Cmd) {
+			cmd.Wait()
+			close(done)
+		}(p.cmd)
+		select {
+		case <-done:
+		case <-time.After(8 * time.Second):
+			p.cmd.Process.Kill()
+			<-done
+		}
 	}
 	r.procs = nil
 }
@@ -931,7 +1002,7 @@ func mixAudio(spkCh, micCh <-chan []float32, out io.Writer, isMono bool) {
 			}
 			out.Write(buf)
 		}
-		
+
 		// Prevent unbounded growth of speaker buffer if it's producing faster than mic
 		// (Should not happen since we forced both to 48000Hz, but just in case)
 		if len(spkBuf) > 48000 {

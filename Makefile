@@ -2,7 +2,7 @@ GEMINI_API_KEY=asd
 GOOGLE_API_KEY=asd
 GOOGLE_PROJECT_ID=gen-lang-client-0165069269
 
-.PHONY: run dev build build-windows build-release build-windows-release clean g_auth prepare-ffmpeg prepare-credentials prepare-build
+.PHONY: run dev build build-windows build-release build-windows-release clean g_auth prepare-ffmpeg prepare-credentials prepare-config prepare-build
 
 run:
 	GDK_BACKEND=x11 wails dev web
@@ -57,8 +57,20 @@ prepare-credentials:
 			Write-Host '✓ Credentials already present in config'; \
 		}"
 
+# Prepare app.env for bundling - copies config/app.env to build/bin/config/
+prepare-config:
+	@powershell -NoProfile -Command "\
+		New-Item -ItemType Directory -Force -Path 'build/bin/config' | Out-Null; \
+		if (Test-Path 'config/app.env') { \
+			Copy-Item 'config/app.env' 'build/bin/config/app.env' -Force; \
+			Write-Host '✓ app.env staged to build/bin/config/'; \
+		} else { \
+			Write-Host '✗ config/app.env not found!'; \
+			exit 1; \
+		}"
+
 # Prepare everything needed for production build
-prepare-build: prepare-ffmpeg prepare-credentials
+prepare-build: prepare-ffmpeg prepare-credentials prepare-config
 	@echo "✓ Build preparation complete"
 
 build-release: prepare-build

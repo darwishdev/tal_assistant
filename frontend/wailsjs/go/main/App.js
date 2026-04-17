@@ -6,6 +6,10 @@ export function ATSBeginSession(arg1) {
   return window['go']['main']['App']['ATSBeginSession'](arg1);
 }
 
+export function ATSCheckGoogleDriveAuthorization() {
+  return window['go']['main']['App']['ATSCheckGoogleDriveAuthorization']();
+}
+
 export function ATSInterviewFind(arg1) {
   return window['go']['main']['App']['ATSInterviewFind'](arg1);
 }
@@ -16,6 +20,10 @@ export function ATSInterviewList() {
 
 export function ATSLogin(arg1, arg2) {
   return window['go']['main']['App']['ATSLogin'](arg1, arg2);
+}
+
+export function ATSUploadSessionToDrive(arg1) {
+  return window['go']['main']['App']['ATSUploadSessionToDrive'](arg1);
 }
 
 export function BeginSession(arg1) {
@@ -64,6 +72,10 @@ export function StartSession(arg1, arg2) {
 
 export function StopRecording() {
   return window['go']['main']['App']['StopRecording']();
+}
+
+export function WorkableCandidateCommentCreate(arg1, arg2, arg3) {
+  return window['go']['main']['App']['WorkableCandidateCommentCreate'](arg1, arg2, arg3);
 }
 
 export function WorkableEventFind(arg1) {

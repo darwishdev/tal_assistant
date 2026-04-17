@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"tal_assistant/config"
 	"tal_assistant/pkg/adk"
 	"tal_assistant/pkg/adk/questionbankgenerator"
@@ -49,6 +51,7 @@ type App struct {
 	ffmpegCmd        *exec.Cmd
 	ffmpegCmd2       *exec.Cmd
 	stopCh           chan struct{}
+	streamWg         sync.WaitGroup
 
 	sessions            *adk.InterviewSessions
 	interviewID         string
@@ -93,6 +96,14 @@ func (a *App) startup(ctx context.Context) {
 		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
 	}
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	// Open a dedicated log file for ffmpeg so its verbose output doesn't
+	// pollute the main application log.
+	ffmpegLogPath := filepath.Join(logDir, "ffmpeg.log")
+	ffmpegLogFile, err := os.OpenFile(ffmpegLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Printf("[startup] WARNING: could not open ffmpeg log file %s: %v — ffmpeg will log to stderr", ffmpegLogPath, err)
+	}
 
 	// Initialize STT service with credentials priority:
 	// 1. External file (if GOOGLE_CREDENTIALS_PATH is set and file exists)
@@ -144,6 +155,9 @@ func (a *App) startup(ctx context.Context) {
 	a.sttService = sttService
 
 	a.ffmpegService = recording.NewRecordingService()
+	if ffmpegLogFile != nil {
+		a.ffmpegService.SetFFmpegLog(ffmpegLogFile)
+	}
 
 	adkService, err := adk.NewADKService(ctx, a.geminiKey)
 	if err != nil {
@@ -167,14 +181,14 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		log.Println("warning: WORKABLE_SUBDOMAIN or WORKABLE_TOKEN not set, workable client unavailable")
 	}
-
-	publisher := redispkg.NewRedisPublisher()
+	fmt.Println("redis config is here ", cfg.RedisAddress)
+	publisher := redispkg.NewRedisPublisher(cfg.RedisAddress)
 	a.redisPublisher = publisher
 
-	redisCache := redispkg.NewRedisCacheClient()
+	redisCache := redispkg.NewRedisCacheClient(cfg.RedisAddress)
 	a.redisCache = redisCache
 
-	subscriber := redispkg.NewOrchestrationSubscriber(adkService, publisher, redisCache, a.emit)
+	subscriber := redispkg.NewOrchestrationSubscriber(cfg.RedisAddress, adkService, publisher, redisCache, a.emit)
 	a.redisSubscriber = subscriber
 
 	redisCtx, redisCancel := context.WithCancel(context.Background())
@@ -385,6 +399,7 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 		a.logAndEmitError("STT service not available - transcription disabled. Check Google Cloud credentials.")
 		log.Printf("[recording] WARNING: STT service is nil, skipping transcription")
 	} else {
+		a.streamWg.Add(1)
 		go a.runSpeechStream(audioPipe, channels)
 	}
 
@@ -421,24 +436,101 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 }
 
 func (a *App) StopRecording() {
-	a.ffmpegService.Stop()
-	a.ffmpegService.StopScreenRecording()
-
-	if a.stopCh != nil {
-		select {
-		case <-a.stopCh:
-		default:
-			close(a.stopCh)
-		}
-		a.stopCh = nil
+	if a.stopCh == nil {
+		// Already stopped
+		return
 	}
+
+	a.emit("status", "stopping")
+
+	select {
+	case <-a.stopCh:
+	default:
+		close(a.stopCh)
+	}
+	a.stopCh = nil
 
 	if a.sigQueue != nil {
 		close(a.sigQueue)
 		a.sigQueue = nil
 	}
 
-	a.emit("status", "stopped")
+	go func() {
+		log.Printf("[session] StopRecording background worker started")
+
+		// Safely stop ffmpeg processes and wait for them to flush to disk.
+		// Moving this to the goroutine prevents the Wails call from blocking.
+		a.ffmpegService.Stop()
+		a.ffmpegService.StopScreenRecording()
+
+		log.Printf("[session] waiting for STT to finish")
+		// Wait for STT to finish its last chunks
+		a.streamWg.Wait()
+		log.Printf("[session] STT finished — saving files")
+
+		// Save local files
+		if len(a.srtLines) > 0 {
+			result := a.SaveFiles(
+				strings.Join(a.srtLines, "\n"),
+				strings.Join(a.sigLines, "\n"),
+			)
+			log.Println("[session] Auto-save result:", result)
+			a.emit("saved", result)
+		} else {
+			log.Println("[session] No transcription lines to save, saving summary only")
+			result := a.SaveFiles("", strings.Join(a.sigLines, "\n"))
+			log.Println("[session] Auto-save result:", result)
+		}
+
+		// Emit "stopped" status now to unblock the UI and navigate back to the list
+		a.emit("status", "stopped")
+
+		// Upload folder to Google Drive in the background (post-session)
+		log.Printf("[drive] starting upload for session %s...", a.interviewID)
+		uploadRes, err := a.ATSUploadSessionToDrive(a.interviewID)
+		if err != nil {
+			log.Printf("[drive] ERROR uploading session %s: %v", a.interviewID, err)
+			a.emit("error", fmt.Sprintf("Failed to upload to Google Drive: %v", err))
+		} else {
+			log.Printf("[drive] SUCCESS uploaded %d files to drive. Folder ID: %s", uploadRes.UploadedCount, uploadRes.TalFolderID)
+			a.emit("saved", fmt.Sprintf("Successfully uploaded %d files to Google Drive", uploadRes.UploadedCount))
+
+			// Add comment to Workable
+			if a.cachedEventFindResult != nil && a.cachedEventFindResult.Candidate != nil {
+				candidateID := a.cachedEventFindResult.Candidate.ID
+				
+				// Ensure we have a member ID to post the comment as
+				var memberID string
+				if a.cachedEventFindResult.Event != nil && len(a.cachedEventFindResult.Event.Members) > 0 {
+					// Use the first member (usually the interviewer)
+					memberID = a.cachedEventFindResult.Event.Members[0].ID
+				}
+				
+				if candidateID != "" {
+					var folderURL string
+					if uploadRes.SessionFolderURL != "" {
+						folderURL = uploadRes.SessionFolderURL
+					} else {
+						folderURL = fmt.Sprintf("https://drive.google.com/drive/folders/%s", uploadRes.TalFolderID)
+					}
+					
+					commentBody := fmt.Sprintf("Tal Assistant recording and transcription saved to Google Drive: %s", folderURL)
+					
+					log.Printf("[workable] adding comment for candidate %s", candidateID)
+					_, err := a.WorkableCandidateCommentCreate(candidateID, memberID, commentBody)
+					if err != nil {
+						log.Printf("[workable] ERROR creating comment: %v", err)
+					} else {
+						log.Printf("[workable] SUCCESS added comment to candidate %s", candidateID)
+					}
+				}
+			} else {
+				log.Printf("[workable] WARNING: no cached candidate data, skipping comment creation")
+			}
+		}
+
+		log.Printf("[session] StopRecording background worker finished")
+	}()
 }
 func (a *App) Minimize() { runtime.WindowMinimise(a.ctx) }
 
@@ -448,40 +540,102 @@ func (a *App) Close() {
 }
 
 // sessionOutputDir returns (and creates) the directory where all session
-// files — srt, signals, video, meta — will be saved.
+// files — srt, summary, video — will be saved.
+// Layout: ~/recordings/{interviewID}/
 func (a *App) sessionOutputDir() string {
 	homeDir, _ := os.UserHomeDir()
-	return homeDir
+	dir := filepath.Join(homeDir, "recordings", a.interviewID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("[session] WARNING: could not create session dir %s: %v", dir, err)
+	}
+	return dir
 }
 func (a *App) SaveFiles(srtContent, signalsContent string) string {
 	outputDir := a.sessionOutputDir()
-	ts := time.Now().Format("2006-01-02_15-04-05")
 
-	srtPath := filepath.Join(outputDir, "transcription_"+ts+".srt")
-	sigPath := filepath.Join(outputDir, "signals_"+ts+".txt")
-	metaPath := filepath.Join(outputDir, "session_"+ts+".json")
+	srtPath := filepath.Join(outputDir, "transcription.srt")
+	summaryPath := filepath.Join(outputDir, "summary.md")
 
-	log.Printf("Saving to: %s", srtPath)
+	log.Printf("[session] saving session files to %s", outputDir)
 
 	if err := os.WriteFile(srtPath, []byte(srtContent), 0644); err != nil {
-		return fmt.Sprintf("error writing srt (%s): %v", srtPath, err)
-	}
-	if err := os.WriteFile(sigPath, []byte(signalsContent), 0644); err != nil {
-		return fmt.Sprintf("error writing signals (%s): %v", sigPath, err)
+		return fmt.Sprintf("error writing transcription (%s): %v", srtPath, err)
 	}
 
-	meta := map[string]string{
-		"recorded_at": ts,
-		"transcript":  srtPath,
-		"signals":     sigPath,
-		"video":       a.currentVideoPath,
-	}
-	if metaBytes, err := json.MarshalIndent(meta, "", "  "); err == nil {
-		_ = os.WriteFile(metaPath, metaBytes, 0644)
+	summaryMD := a.buildSummaryMarkdown()
+	if err := os.WriteFile(summaryPath, []byte(summaryMD), 0644); err != nil {
+		log.Printf("[session] WARNING: could not write summary.md: %v", err)
 	}
 
 	a.currentVideoPath = ""
-	return fmt.Sprintf("saved: %s", srtPath)
+	return fmt.Sprintf("saved: %s", outputDir)
+}
+
+// buildSummaryMarkdown fetches the interview summary from Redis and formats it
+// as a Markdown document.
+func (a *App) buildSummaryMarkdown() string {
+	var sb strings.Builder
+
+	sb.WriteString("# Interview Summary\n\n")
+	sb.WriteString(fmt.Sprintf("**Interview ID:** %s  \n", a.interviewID))
+	sb.WriteString(fmt.Sprintf("**Date:** %s  \n\n", time.Now().Format("2006-01-02 15:04:05")))
+	sb.WriteString("---\n\n")
+
+	summary, err := a.redisCache.FindInterviewSummary(a.ctx, a.interviewID)
+	if err != nil || summary == nil {
+		sb.WriteString("_No interview summary available._\n")
+		log.Printf("[session] WARNING: could not fetch interview summary from Redis: %v", err)
+		return sb.String()
+	}
+
+	sb.WriteString("## Questions & Answers\n\n")
+	for i, qa := range summary.Questions {
+		writeQA(&sb, i+1, &qa)
+	}
+
+	return sb.String()
+}
+
+func writeQA(sb *strings.Builder, num int, qa *redispkg.QuestionAnswer) {
+	if num > 0 {
+		sb.WriteString(fmt.Sprintf("### %d. %s\n\n", num, qa.Question.Question))
+	} else {
+		sb.WriteString(fmt.Sprintf("#### %s\n\n", qa.Question.Question))
+	}
+
+	if qa.Answer != "" {
+		sb.WriteString(fmt.Sprintf("**Answer:** %s\n\n", qa.Answer))
+	} else {
+		sb.WriteString("**Answer:** _No answer recorded._\n\n")
+	}
+
+	if j := qa.Judgment; j != nil {
+		pass := "No"
+		if j.Pass {
+			pass = "Yes"
+		}
+		sb.WriteString("**Evaluation:**\n\n")
+		sb.WriteString(fmt.Sprintf("- Score: %d/10\n", j.Score))
+		sb.WriteString(fmt.Sprintf("- Pass: %s\n", pass))
+		if j.Verdict != "" {
+			sb.WriteString(fmt.Sprintf("- Verdict: %s\n", j.Verdict))
+		}
+		if len(j.Strengths) > 0 {
+			sb.WriteString(fmt.Sprintf("- Strengths: %s\n", strings.Join(j.Strengths, ", ")))
+		}
+		if len(j.Weaknesses) > 0 {
+			sb.WriteString(fmt.Sprintf("- Weaknesses: %s\n", strings.Join(j.Weaknesses, ", ")))
+		}
+		if len(j.MissingKeywords) > 0 {
+			sb.WriteString(fmt.Sprintf("- Missing keywords: %s\n", strings.Join(j.MissingKeywords, ", ")))
+		}
+		sb.WriteString("\n")
+	}
+
+	if qa.FollowupQuestion != nil {
+		sb.WriteString("**Follow-up:**\n\n")
+		writeQA(sb, 0, qa.FollowupQuestion)
+	}
 }
 
 // ── Internal ───────────────────────────────────────────────────────────────
@@ -498,6 +652,12 @@ func (a *App) logAndEmitError(msg string) {
 // ── Google Speech ──────────────────────────────────────────────────────────
 
 func (a *App) runSpeechStream(audio io.Reader, channels int) {
+	defer a.streamWg.Done()
+
+	if closer, ok := audio.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	
 	ctx, cancel := context.WithCancel(a.ctx)
 	defer cancel()
 
@@ -509,52 +669,62 @@ func (a *App) runSpeechStream(audio io.Reader, channels int) {
 		}
 	}()
 
-	results, err := a.sttService.StreamDiarized(ctx, audio, channels)
-	if err != nil {
-		a.logAndEmitError(fmt.Sprintf("stt stream: %v", err))
-		return
-	}
-
-	for res := range results {
-		label := res.SpeakerTag
-
-		a.emit("transcript", map[string]interface{}{
-			"label":   label,
-			"text":    res.Text,
-			"startMs": res.StartMs,
-			"endMs":   res.EndMs,
-			"isFinal": res.IsFinal,
-		})
-
-		if res.IsFinal {
-			// Push to queue — processed sequentially, no race on session state
-			if a.sigQueue != nil {
-				a.sigQueue <- sigJob{
-					speaker: label,
-					text:    res.Text,
-					startMs: res.StartMs,
-				}
-			}
-
-			a.srtLines = append(a.srtLines,
-				fmt.Sprintf("%d", a.srtIndex),
-				fmt.Sprintf("%s --> %s",
-					timeutils.MsToSRT(res.StartMs),
-					timeutils.MsToSRT(res.EndMs)),
-				fmt.Sprintf("[%s] %s", label, res.Text),
-				"",
-			)
-			a.srtIndex++
+	// Google STT has a ~5-minute streaming limit. When the stream closes
+	// naturally we restart it so long interviews are not interrupted.
+	// We only break out of the loop (and save) when the user stops recording
+	// — detected via ctx.Err() being non-nil after cancel() is called.
+	for {
+		if ctx.Err() != nil {
+			break
 		}
-	}
 
-	if len(a.srtLines) > 0 {
-		result := a.SaveFiles(
-			strings.Join(a.srtLines, "\n"),
-			strings.Join(a.sigLines, "\n"),
-		)
-		log.Println("Auto-save:", result)
-		a.emit("saved", result)
+		results, err := a.sttService.StreamDiarized(ctx, audio, channels)
+		if err != nil {
+			if ctx.Err() != nil {
+				break // stop was requested, exit cleanly
+			}
+			log.Printf("[recording] STT stream error: %v — restarting", err)
+			continue
+		}
+
+		for res := range results {
+			label := res.SpeakerTag
+
+			a.emit("transcript", map[string]interface{}{
+				"label":   label,
+				"text":    res.Text,
+				"startMs": res.StartMs,
+				"endMs":   res.EndMs,
+				"isFinal": res.IsFinal,
+			})
+
+			if res.IsFinal {
+				// Push to queue — processed sequentially, no race on session state
+				if a.sigQueue != nil {
+					a.sigQueue <- sigJob{
+						speaker: label,
+						text:    res.Text,
+						startMs: res.StartMs,
+					}
+				}
+
+				a.srtLines = append(a.srtLines,
+					fmt.Sprintf("%d", a.srtIndex),
+					fmt.Sprintf("%s --> %s",
+						timeutils.MsToSRT(res.StartMs),
+						timeutils.MsToSRT(res.EndMs)),
+					fmt.Sprintf("[%s] %s", label, res.Text),
+					"",
+				)
+				a.srtIndex++
+			}
+		}
+
+		// results channel closed — check whether stop was requested
+		if ctx.Err() != nil {
+			break
+		}
+		log.Printf("[recording] STT stream reached its limit, restarting...")
 	}
 }
 
@@ -657,6 +827,20 @@ func (a *App) WorkableInterviewList(memberID string) ([]workableclient.Event, er
 		MemberID: memberID,
 	}
 	return a.workableClient.ListFutureEvents(opts)
+}
+
+// WorkableCandidateCommentCreate creates a comment on a candidate's profile.
+func (a *App) WorkableCandidateCommentCreate(candidateID string, memberID string, body string) (*workableclient.Comment, error) {
+	if a.workableClient == nil {
+		return nil, fmt.Errorf("workable client not configured")
+	}
+	req := workableclient.CommentCreateRequest{
+		MemberID: memberID,
+		Comment: workableclient.CommentDetail{
+			Body: body,
+		},
+	}
+	return a.workableClient.CandidateCommentCreate(candidateID, req)
 }
 
 // WorkableEventFind fetches a single Workable event by ID along with its full
@@ -765,7 +949,7 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 	}
 
 	log.Printf("[qbgen] calling QuestionBankGeneratorRun — sessionID=%s userID=%s", sessionID, userID)
-	
+
 	questions, err := a.adkService.QuestionBankGeneratorRun(adkutils.AgentRunRequest{
 		Ctx:       a.ctx,
 		SessionID: sessionID,
@@ -778,7 +962,7 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 	}
 
 	log.Printf("[qbgen] agent returned %d questions", len(questions))
-	
+
 	// Log each question for debugging
 	if len(questions) > 0 {
 		questionsJSON, err := json.MarshalIndent(questions, "", "  ")
@@ -801,22 +985,48 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 }
 
 // GetQuestionBank returns the question bank stored in Redis for the given eventID,
-// as an ordered slice (sorted by ID). Returns nil if no bank exists yet.
+// as a stable ordered slice (sorted by Order field). Returns nil if no bank exists yet.
 func (a *App) GetQuestionBank(eventID string) ([]adkutils.QuestionBankQuestion, error) {
 	bank, err := a.redisCache.FindQuestionBank(a.ctx, eventID)
 	if err != nil {
 		return nil, err
 	}
-	questions := make([]adkutils.QuestionBankQuestion, 0, len(bank))
-	for _, q := range bank {
-		questions = append(questions, q)
-	}
-	return questions, nil
+	return sortedQuestions(bank), nil
 }
 
 // ATSInterviewFind returns full detail for a single interview by name.
 func (a *App) ATSInterviewFind(name string) (*atsclient.InterviewFindResult, error) {
 	return a.atsClient.InterviewFind(name)
+}
+
+// ATSCheckGoogleDriveAuthorization checks if the current user is authorized with Google Drive.
+func (a *App) ATSCheckGoogleDriveAuthorization() (*atsclient.DriveAuthStatus, error) {
+	if a.atsClient == nil {
+		return nil, fmt.Errorf("ATS client not configured")
+	}
+	fmt.Println("checing drive auth")
+	res, err := a.atsClient.CheckGoogleDriveAuthorization()
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("checing drive auth", res)
+	return res, nil
+}
+
+// ATSUploadSessionToDrive uploads the local recording session folder to Google Drive.
+func (a *App) ATSUploadSessionToDrive(interviewID string) (*atsclient.DriveUploadFolderResponse, error) {
+	if a.atsClient == nil {
+		return nil, fmt.Errorf("ATS client not configured")
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	folderPath := filepath.Join(homeDir, "recordings", interviewID)
+
+	if _, err := os.Stat(folderPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("session folder does not exist: %s", folderPath)
+	}
+
+	return a.atsClient.UploadFolderToDrive(folderPath, interviewID)
 }
 
 // BeginSession initialises all ADK agent sessions using the pre-cached Workable event
@@ -861,10 +1071,7 @@ func (a *App) BeginSession(eventID string) string {
 	if err != nil || len(questionBankMap) == 0 {
 		return "error: no question bank found — please generate one before starting the session"
 	}
-	questions := make([]adkutils.QuestionBankQuestion, 0, len(questionBankMap))
-	for _, q := range questionBankMap {
-		questions = append(questions, q)
-	}
+	questions := sortedQuestions(questionBankMap)
 	log.Printf("[session] loaded %d questions from Redis — eventID=%s", len(questions), eventID)
 
 	// 3. Determine userID from candidate
@@ -1117,6 +1324,30 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// sortedQuestions converts a question bank map to a slice sorted by Order.
+// Questions with Order == 0 (legacy, pre-Order-field data) fall to the end
+// and are then sorted by ID to remain deterministic.
+func sortedQuestions(bank map[string]adkutils.QuestionBankQuestion) []adkutils.QuestionBankQuestion {
+	out := make([]adkutils.QuestionBankQuestion, 0, len(bank))
+	for _, q := range bank {
+		out = append(out, q)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		oi, oj := out[i].Order, out[j].Order
+		if oi != oj {
+			if oi == 0 {
+				return false
+			}
+			if oj == 0 {
+				return true
+			}
+			return oi < oj
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }
 
 // ManualEvaluateAnswer allows the recruiter to manually trigger evaluation of the

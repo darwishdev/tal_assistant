@@ -30,6 +30,7 @@ export namespace adkutils {
 	}
 	export class QuestionBankQuestion {
 	    id: string;
+	    order: number;
 	    category: string;
 	    difficulty: string;
 	    estimated_time_minutes: number;
@@ -46,6 +47,7 @@ export namespace adkutils {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.order = source["order"];
 	        this.category = source["category"];
 	        this.difficulty = source["difficulty"];
 	        this.estimated_time_minutes = source["estimated_time_minutes"];
@@ -177,6 +179,79 @@ export namespace atsclient {
 	}
 	
 	
+	
+	export class DriveAuthStatus {
+	    status: string;
+	    auth_url?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DriveAuthStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.auth_url = source["auth_url"];
+	    }
+	}
+	export class DriveUploadResult {
+	    path: string;
+	    file_id: string;
+	    file_url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DriveUploadResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.file_id = source["file_id"];
+	        this.file_url = source["file_url"];
+	    }
+	}
+	export class DriveUploadFolderResponse {
+	    status: string;
+	    auth_url?: string;
+	    tal_folder_id?: string;
+	    session_folder_id?: string;
+	    session_folder_url?: string;
+	    uploaded_count?: number;
+	    uploaded?: DriveUploadResult[];
+	
+	    static createFrom(source: any = {}) {
+	        return new DriveUploadFolderResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.auth_url = source["auth_url"];
+	        this.tal_folder_id = source["tal_folder_id"];
+	        this.session_folder_id = source["session_folder_id"];
+	        this.session_folder_url = source["session_folder_url"];
+	        this.uploaded_count = source["uploaded_count"];
+	        this.uploaded = this.convertValues(source["uploaded"], DriveUploadResult);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	
 	export class EvaluationCriteria {
 	    must_mention: string[];
@@ -857,6 +932,22 @@ export namespace workableclient {
 		    }
 		    return a;
 		}
+	}
+	export class Comment {
+	    id: string;
+	    body: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Comment(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.body = source["body"];
+	        this.created_at = source["created_at"];
+	    }
 	}
 	export class Conference {
 	    type?: string;

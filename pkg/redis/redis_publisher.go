@@ -20,11 +20,11 @@ const (
 // SignalDetectedEvent is published when the signaling agent emits a Q:/A:/UNCLEAR signal.
 // The publisher must include the mapper session ID so the subscriber can route the call.
 type SignalDetectedEvent struct {
-	InterviewID     string `json:"interview_id"`
-	UserID          string `json:"user_id"`
-	TranscriptLine  string `json:"transcript_line"`
-	Signal          string `json:"signal"` // Q:..., A:..., or UNCLEAR
-	QAndA           string `json:"q_and_a"`
+	InterviewID        string `json:"interview_id"`
+	UserID             string `json:"user_id"`
+	TranscriptLine     string `json:"transcript_line"`
+	Signal             string `json:"signal"` // Q:..., A:..., or UNCLEAR
+	QAndA              string `json:"q_and_a"`
 	SignalingSessionID string `json:"signaling_session_id"`
 	MapperSessionID    string `json:"mapper_session_id"`
 	IndicatorSessionID string `json:"indicator_session_id"`
@@ -84,13 +84,16 @@ type RedisPublisher struct {
 	client *redis.Client
 }
 
-func NewRedisPublisher() *RedisPublisher {
-	addr := os.Getenv("REDIS_URL")
-	if addr == "" {
-		addr = "localhost:6378"
+func NewRedisPublisher(redisUrl string) *RedisPublisher {
+	if redisUrl == "" {
+		addr := os.Getenv("REDIS_URL")
+		if addr == "" {
+			addr = "localhost:6379"
+		}
+		redisUrl = addr
 	}
 	return &RedisPublisher{
-		client: redis.NewClient(&redis.Options{Addr: addr}),
+		client: redis.NewClient(&redis.Options{Addr: redisUrl}),
 	}
 }
 

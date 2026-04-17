@@ -92,6 +92,12 @@ Section
     File "..\..\bin\ffmpeg.exe"
     ; ---------------------
 
+    ; --- Bundle app config ---
+    SetOutPath "$INSTDIR\config"
+    File "..\..\bin\config\app.env"
+    SetOutPath $INSTDIR
+    ; -------------------------
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
@@ -131,6 +137,11 @@ Section "uninstall"
     ; --- Remove bundled ffmpeg ---
     Delete "$INSTDIR\ffmpeg.exe"
     ; -----------------------------
+
+    ; --- Remove bundled app config ---
+    Delete "$INSTDIR\config\app.env"
+    RMDir "$INSTDIR\config"
+    ; ----------------------------------
 
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
 

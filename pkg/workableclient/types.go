@@ -320,6 +320,29 @@ type subscriptionEnvelope struct {
 }
 
 // ---------------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------------
+
+type CommentDetail struct {
+	Body string `json:"body"`
+}
+
+type CommentCreateRequest struct {
+	MemberID string        `json:"member_id,omitempty"`
+	Comment  CommentDetail `json:"comment"`
+}
+
+type Comment struct {
+	ID        string `json:"id"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"created_at"`
+}
+
+type commentEnvelope struct {
+	Comment Comment `json:"comment"`
+}
+
+// ---------------------------------------------------------------------------
 // Members
 // ---------------------------------------------------------------------------
 

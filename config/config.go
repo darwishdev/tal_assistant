@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	_ "embed"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -17,10 +18,10 @@ var embeddedConfig []byte
 var embeddedCredentials []byte
 
 type Config struct {
-	GoogleProjectID         string `mapstructure:"GOOGLE_PROJECT_ID"`
-	GoogleAPIKey            string `mapstructure:"GOOGLE_API_KEY"`
-	GoogleCredentialsPath   string `mapstructure:"GOOGLE_CREDENTIALS_PATH"`
-	DevMode                 bool   `mapstructure:"DEV_MODE"`
+	GoogleProjectID       string `mapstructure:"GOOGLE_PROJECT_ID"`
+	GoogleAPIKey          string `mapstructure:"GOOGLE_API_KEY"`
+	GoogleCredentialsPath string `mapstructure:"GOOGLE_CREDENTIALS_PATH"`
+	DevMode               bool   `mapstructure:"DEV_MODE"`
 
 	RedisHost     string `mapstructure:"REDIS_HOST"`
 	RedisPort     string `mapstructure:"REDIS_PORT"`
@@ -35,7 +36,7 @@ type Config struct {
 	WorkableSubdomain string `mapstructure:"WORKABLE_SUBDOMAIN"`
 	WorkableToken     string `mapstructure:"WORKABLE_TOKEN"`
 
-	RedisAddress string
+	RedisAddress string `mapstructure:"REDIS_ADDRESS"`
 }
 
 var AppConfig Config
@@ -50,29 +51,20 @@ func Load() *Config {
 	}
 
 	// Optionally override with a local file (useful during development).
-	homeDir, _ := os.UserHomeDir()
-	overrides := []string{
-		"./config/app.env",
-		filepath.Join(homeDir, ".config", "tal_assistant", "app.env"),
-	}
-	for _, p := range overrides {
-		if _, err := os.Stat(p); err == nil {
-			viper.SetConfigFile(p)
-			if err := viper.ReadInConfig(); err != nil {
-				log.Printf("warning: could not read override config %s: %v", p, err)
-			} else {
-				log.Println("Config overridden from:", p)
-			}
-			break
-		}
+	// homeDir, _ := os.UserHomeDir()
+
+	p := "./config/app.env"
+	viper.SetConfigFile(p)
+	if err := viper.ReadInConfig(); err != nil {
+		log.Panic(fmt.Errorf("warning: could not read override config %s: %v", p, err))
 	}
 
 	if err := viper.Unmarshal(&AppConfig); err != nil {
 		log.Fatalf("Unable to decode config: %v", err)
 	}
 
-	AppConfig.RedisAddress = AppConfig.RedisHost + ":" + AppConfig.RedisPort
-	
+	// AppConfig.RedisAddress = AppConfig.RedisHost + ":" + AppConfig.RedisPort
+
 	// Resolve credentials path relative to executable if it's a relative path
 	if AppConfig.GoogleCredentialsPath != "" && !filepath.IsAbs(AppConfig.GoogleCredentialsPath) {
 		exePath, err := os.Executable()
@@ -87,7 +79,7 @@ func Load() *Config {
 			}
 		}
 	}
-	
+
 	return &AppConfig
 }
 

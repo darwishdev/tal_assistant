@@ -32,12 +32,12 @@ type QuestionAnswer struct {
 
 // Judgment holds the evaluation result from the judging agent
 type Judgment struct {
-	Score            int      `json:"score"`
-	Pass             bool     `json:"pass"`
-	Strengths        []string `json:"strengths"`
-	Weaknesses       []string `json:"weaknesses"`
-	MissingKeywords  []string `json:"missing_keywords"`
-	Verdict          string   `json:"verdict"`
+	Score           int      `json:"score"`
+	Pass            bool     `json:"pass"`
+	Strengths       []string `json:"strengths"`
+	Weaknesses      []string `json:"weaknesses"`
+	MissingKeywords []string `json:"missing_keywords"`
+	Verdict         string   `json:"verdict"`
 }
 
 // InterviewSummary is the full ordered Q&A history stored for an interview.
@@ -94,13 +94,16 @@ type RedisCacheClient struct {
 	client *redis.Client
 }
 
-func NewRedisCacheClient() *RedisCacheClient {
-	addr := os.Getenv("REDIS_URL")
-	if addr == "" {
-		addr = "localhost:6378"
+func NewRedisCacheClient(redisUrl string) *RedisCacheClient {
+	if redisUrl == "" {
+		addr := os.Getenv("REDIS_URL")
+		if addr == "" {
+			addr = "localhost:6379"
+		}
+		redisUrl = addr
 	}
 	return &RedisCacheClient{
-		client: redis.NewClient(&redis.Options{Addr: addr}),
+		client: redis.NewClient(&redis.Options{Addr: redisUrl}),
 	}
 }
 
@@ -146,7 +149,13 @@ func (c *RedisCacheClient) SaveQuestionBank(
 	key := questionBankKeyPrefix + interviewID
 
 	pipe := c.client.Pipeline()
-	for _, q := range questions {
+	for i, q := range questions {
+		// Stamp the 1-based position so order is persisted in Redis.
+		// Only set it when it hasn't been assigned yet so that an explicit
+		// order from the generator is never overwritten.
+		if q.Order == 0 {
+			q.Order = i + 1
+		}
 		data, err := json.Marshal(q)
 		if err != nil {
 			return fmt.Errorf("marshal question %s: %w", q.ID, err)

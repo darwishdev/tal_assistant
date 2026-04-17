@@ -23,17 +23,21 @@ type OrchestrationSubscriber struct {
 }
 
 func NewOrchestrationSubscriber(
+	redisUrl string,
 	adkSvc adk.ADKServiceInterface,
 	publisher PublisherInterface,
 	cache RedisCacheInterface,
 	emitToUi func(event string, data interface{}),
 ) *OrchestrationSubscriber {
-	addr := os.Getenv("REDIS_URL")
-	if addr == "" {
-		addr = "localhost:6378"
+	if redisUrl == "" {
+		addr := os.Getenv("REDIS_URL")
+		if addr == "" {
+			addr = "localhost:6379"
+		}
+		redisUrl = addr
 	}
 	return &OrchestrationSubscriber{
-		client:    redis.NewClient(&redis.Options{Addr: addr}),
+		client:    redis.NewClient(&redis.Options{Addr: redisUrl}),
 		adkSvc:    adkSvc,
 		publisher: publisher,
 		emitToUi:  emitToUi,
@@ -128,7 +132,7 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 	var questionID string
 	if strings.HasPrefix(event.Signal, "Q:") {
 		signalQuestionText := strings.TrimSpace(strings.TrimPrefix(event.Signal, "Q:"))
-		
+
 		// First check if it matches the current question
 		if currentPointer, err := s.cache.FindCurrentQuestionPointer(ctx, event.InterviewID); err == nil && currentPointer != "" {
 			if currentQ, err := s.cache.FindQuestionByID(ctx, event.InterviewID, currentPointer); err == nil {
@@ -138,7 +142,7 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 				}
 			}
 		}
-		
+
 		// If no match with current question, check all questions in the bank
 		if questionID == "" {
 			if summary, err := s.cache.FindInterviewSummary(ctx, event.InterviewID); err == nil {
@@ -174,7 +178,7 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 			log.Printf("[orchestrator] [%s] save mapper response failed: %v", event.InterviewID, err)
 		}
 	}
-	
+
 	if questionID == "UNKNOWN" {
 		log.Printf("[orchestrator] [%s] mapper returned UNKNOWN — skipping", event.InterviewID)
 		return
@@ -229,7 +233,7 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		// Send current question to NQI (no response expected)
 		questionJSON, _ := json.MarshalIndent(currentQuestion, "", "  ")
 		prompt := fmt.Sprintf("Current Question Entity:\n%s", string(questionJSON))
-		
+
 		for _, err := range s.adkSvc.NextQuestionIndicatorRun(adkutils.AgentRunRequest{
 			Ctx:       ctx,
 			SessionID: event.IndicatorSessionID,
@@ -265,24 +269,24 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		// Answer signal: check if it's an answer-end signal (ends with semicolon)
 		text := strings.TrimSpace(strings.TrimPrefix(event.Signal, "A:"))
 		isAnswerEnd := strings.HasSuffix(text, ";")
-		
+
 		// Remove the semicolon from the answer text if present
 		if isAnswerEnd {
 			text = strings.TrimSuffix(text, ";")
 			text = strings.TrimSpace(text)
 		}
-		
+
 		// Always save the answer (whether partial or complete)
 		if err := s.cache.SaveAnswer(ctx, event.InterviewID, event.QuestionID, text); err != nil {
 			log.Printf("[orchestrator] [%s] save answer failed: %v", event.InterviewID, err)
 		}
-		
+
 		// If not an answer-end signal, skip the judging and NQI flow
 		if !isAnswerEnd {
 			log.Printf("[orchestrator] [%s] answer in progress (no semicolon) — skipping judging/NQI", event.InterviewID)
 			return
 		}
-		
+
 		log.Printf("[orchestrator] [%s] answer complete (semicolon detected) — proceeding with judging/NQI", event.InterviewID)
 	}
 
@@ -290,7 +294,7 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 	if !strings.HasPrefix(event.Signal, "A:") {
 		return
 	}
-	
+
 	// Extract answer text (semicolon already removed above)
 	answerText := strings.TrimSpace(strings.TrimPrefix(event.Signal, "A:"))
 	if strings.HasSuffix(answerText, ";") {

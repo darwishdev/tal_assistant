@@ -35,6 +35,11 @@ func NewRecordingService() *RecordingService {
 	}
 }
 
+// SetFFmpegLog directs all ffmpeg stderr output to w instead of os.Stderr.
+func (r *RecordingService) SetFFmpegLog(w io.Writer) {
+	r.svc.SetFFmpegLog(w)
+}
+
 func (r *RecordingService) Start(micID, speakerID string) (io.ReadCloser, int, error) {
 	return r.svc.Start(micID, speakerID)
 }

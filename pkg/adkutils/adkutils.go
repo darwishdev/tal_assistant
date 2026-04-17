@@ -21,6 +21,7 @@ type FollowupTrigger struct {
 
 type QuestionBankQuestion struct {
 	ID                   string               `json:"id"`
+	Order                int                  `json:"order"`
 	Category             string               `json:"category"`
 	Difficulty           string               `json:"difficulty"`
 	EstimatedTimeMinutes int                  `json:"estimated_time_minutes"`

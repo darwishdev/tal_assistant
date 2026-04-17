@@ -63,6 +63,7 @@ type ClientInterface interface {
 	ListJobCandidates(shortcode string, opts ListCandidatesOptions) ([]Candidate, error)
 	GetCandidate(shortcode, candidateID string) (*Candidate, error)
 	GetCandidateActivities(shortcode, candidateID string) ([]Activity, error)
+	CandidateCommentCreate(candidateID string, req CommentCreateRequest) (*Comment, error)
 
 	// Events
 	ListEvents(opts ListEventsOptions) ([]Event, error)
@@ -194,6 +195,26 @@ func (c *Client) GetCandidateActivities(shortcode, candidateID string) ([]Activi
 	return env.Activities, nil
 }
 
+func (c *Client) CandidateCommentCreate(candidateID string, req CommentCreateRequest) (*Comment, error) {
+	var env commentEnvelope
+	path := fmt.Sprintf("candidates/%s/comments", candidateID)
+	
+	// Convert req to map[string]any for the existing post() method
+	bodyMap := map[string]any{
+		"comment": map[string]any{
+			"body": req.Comment.Body,
+		},
+	}
+	if req.MemberID != "" {
+		bodyMap["member_id"] = req.MemberID
+	}
+
+	if err := c.post(path, bodyMap, &env); err != nil {
+		return nil, err
+	}
+	return &env.Comment, nil
+}
+
 func candidateParams(opts ListCandidatesOptions) url.Values {
 	params := url.Values{}
 	limit := opts.Limit
@@ -251,9 +272,17 @@ func (c *Client) ListEvents(opts ListEventsOptions) ([]Event, error) {
 }
 
 func (c *Client) ListFutureEvents(opts ListEventsOptions) ([]Event, error) {
-	today := time.Now().UTC()
-	opts.StartDate = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC).
-		Format("2006-01-02")
+	now := time.Now().UTC()
+	yesterday := now.AddDate(0, 0, -1)
+
+	// Start of yesterday (00:00:00)
+	opts.StartDate = time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, time.UTC).
+		Format("2006-01-02T15:04:05Z")
+
+	// End of yesterday / Start of today (00:00:00)
+	opts.EndDate = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).
+		Format("2006-01-02T15:04:05Z")
+
 	return c.ListEvents(opts)
 }
 

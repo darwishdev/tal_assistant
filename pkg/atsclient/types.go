@@ -148,3 +148,34 @@ type InterviewFindResult struct {
 type interviewFindResponse struct {
 	Message InterviewFindResult `json:"message"`
 }
+
+// ── Google Drive Integration ───────────────────────────────────────────────
+
+type DriveAuthStatus struct {
+	Status  string `json:"status"` // "authorized" or "unauthorized"
+	AuthURL string `json:"auth_url,omitempty"`
+}
+
+type driveAuthStatusEnvelope struct {
+	Message DriveAuthStatus `json:"message"`
+}
+
+type DriveUploadResult struct {
+	Path    string `json:"path"`
+	FileID  string `json:"file_id"`
+	FileURL string `json:"file_url"`
+}
+
+type DriveUploadFolderResponse struct {
+	Status           string              `json:"status"` // "success" or "unauthorized"
+	AuthURL          string              `json:"auth_url,omitempty"`
+	TalFolderID      string              `json:"tal_folder_id,omitempty"`
+	SessionFolderID  string              `json:"session_folder_id,omitempty"`
+	SessionFolderURL string              `json:"session_folder_url,omitempty"`
+	UploadedCount    int                 `json:"uploaded_count,omitempty"`
+	Uploaded         []DriveUploadResult `json:"uploaded,omitempty"`
+}
+
+type driveUploadFolderEnvelope struct {
+	Message DriveUploadFolderResponse `json:"message"`
+}

@@ -1030,13 +1030,24 @@ async function startSessionAndRecord() {
         return
     }
 
-    // Render the active session shell; timer is held until recording is live
-    renderActiveSession(/* timerDeferred = */ true)
-
-    const timerEl = document.getElementById('rec-timer')
-    if (timerEl) timerEl.textContent = 'Loading…'
-
     try {
+        // Step 0 — Check Google Drive authorization
+        const authResponse = await window.go.main.App.ATSCheckGoogleDriveAuthorization()
+        if (authResponse.status === "unauthorized") {
+            // Show custom modal or dialog
+            const wantsAuth = confirm("Google Drive access is required to upload the interview data. Open the authorization page now?\n\nAfter authorizing, click 'Start Recording' again.")
+            if (wantsAuth && authResponse.auth_url) {
+                window.runtime.BrowserOpenURL(authResponse.auth_url)
+            }
+            return
+        }
+
+        // Render the active session shell; timer is held until recording is live
+        renderActiveSession(/* timerDeferred = */ true)
+
+        const timerEl = document.getElementById('rec-timer')
+        if (timerEl) timerEl.textContent = 'Loading…'
+
         // 1. Join cached question bank with Workable event data and seed all agent sessions
         const beginResult = await window.go.main.App.BeginSession(_selectedInterview)
         if (beginResult !== 'ok') {
@@ -1110,6 +1121,11 @@ function toggleSummaryView() {
 }
 
 function toggleRec() {
+    const btn = document.getElementById('rec-btn')
+    if (btn) {
+        btn.textContent = 'Stopping...'
+        btn.disabled = true
+    }
     window.go.main.App.StopRecording()
 }
 

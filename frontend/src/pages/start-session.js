@@ -219,13 +219,24 @@ async function startSessionAndRecord() {
         return
     }
 
-    // Render session shell immediately; keep the timer paused until recording is live
-    renderActiveSession(/* timerDeferred = */ true)
-
-    const timerEl = document.getElementById('rec-timer')
-    if (timerEl) timerEl.textContent = 'Loading…'
-
     try {
+        // Step 0 — Check Google Drive authorization
+        const authResponse = await window.go.main.App.ATSCheckGoogleDriveAuthorization()
+        if (authResponse.status === "unauthorized") {
+            // Show custom modal or dialog
+            const wantsAuth = confirm("Google Drive access is required to upload the interview data. Open the authorization page now?\n\nAfter authorizing, click 'Start Recording' again.")
+            if (wantsAuth && authResponse.auth_url) {
+                window.runtime.BrowserOpenURL(authResponse.auth_url)
+            }
+            return
+        }
+
+        // Render session shell immediately; keep the timer paused until recording is live
+        renderActiveSession(/* timerDeferred = */ true)
+
+        const timerEl = document.getElementById('rec-timer')
+        if (timerEl) timerEl.textContent = 'Loading…'
+
         // Step 1 — initialise session in Go (fetches ATS data, seeds Redis)
         const beginResult = await window.go.main.App.ATSBeginSession(_selectedInterview)
         if (beginResult !== 'ok') {

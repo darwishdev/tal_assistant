@@ -7,11 +7,15 @@ import {workableclient} from '../models';
 
 export function ATSBeginSession(arg1:string):Promise<string>;
 
+export function ATSCheckGoogleDriveAuthorization():Promise<atsclient.DriveAuthStatus>;
+
 export function ATSInterviewFind(arg1:string):Promise<atsclient.InterviewFindResult>;
 
 export function ATSInterviewList():Promise<Array<atsclient.InterviewListItem>>;
 
 export function ATSLogin(arg1:string,arg2:string):Promise<main.AppLoginResponse>;
+
+export function ATSUploadSessionToDrive(arg1:string):Promise<atsclient.DriveUploadFolderResponse>;
 
 export function BeginSession(arg1:string):Promise<string>;
 
@@ -36,6 +40,8 @@ export function StartRecording(arg1:string,arg2:string,arg3:string):Promise<stri
 export function StartSession(arg1:string,arg2:Array<adkutils.QuestionBankQuestion>):Promise<string>;
 
 export function StopRecording():Promise<void>;
+
+export function WorkableCandidateCommentCreate(arg1:string,arg2:string,arg3:string):Promise<workableclient.Comment>;
 
 export function WorkableEventFind(arg1:string):Promise<workableclient.EventFindResult>;
 

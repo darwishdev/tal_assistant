@@ -32,11 +32,19 @@ type AudioSource struct {
 // RecordingService provides a clean entry point for recording tasks,
 // wrapping the underlying WASAPI Recorder and Screen capture logic.
 type RecordingService struct {
-	recorder *Recorder
+	audioRecorder  *Recorder // STT audio stream
+	screenRecorder *Recorder // screen + audio file
+	ffmpegLog      io.Writer
 }
 
 func NewRecordingService() *RecordingService {
 	return &RecordingService{}
+}
+
+// SetFFmpegLog directs all ffmpeg stderr output to w instead of os.Stderr.
+// Must be called before Start or StartScreenRecording.
+func (s *RecordingService) SetFFmpegLog(w io.Writer) {
+	s.ffmpegLog = w
 }
 
 // AudioDeviceList returns all active speakers and microphones.
@@ -86,7 +94,7 @@ func (s *RecordingService) ScreenDeviceList(ctx context.Context) ([]ScreenSource
 // or mono s16le 16kHz stream on stdout, suitable for STT.
 // Returns the audio stream and the number of channels (1 or 2).
 func (s *RecordingService) Start(micID, speakerID string) (io.ReadCloser, int, error) {
-	if s.recorder != nil {
+	if s.audioRecorder != nil {
 		return nil, 0, fmt.Errorf("already recording")
 	}
 
@@ -125,6 +133,7 @@ func (s *RecordingService) Start(micID, speakerID string) (io.ReadCloser, int, e
 		Speaker:     speaker,
 		AudioMode:   mode,
 		AudioStream: pw,
+		FFmpegLog:   s.ffmpegLog,
 	}
 
 	r, err := New(opts)
@@ -140,7 +149,7 @@ func (s *RecordingService) Start(micID, speakerID string) (io.ReadCloser, int, e
 		return nil, 0, err
 	}
 
-	s.recorder = r
+	s.audioRecorder = r
 
 	// Wrap pr to close recorder on close
 	return &recorderReadCloser{
@@ -161,7 +170,7 @@ type recorderReadCloser struct {
 func (r *recorderReadCloser) Close() error {
 	r.pw.Close()
 	_, err := r.recorder.Stop()
-	r.service.recorder = nil
+	r.service.audioRecorder = nil
 	return err
 }
 
@@ -171,8 +180,8 @@ func (s *RecordingService) StartScreenRecording(
 	micID, speakerID string,
 	outputDir string,
 ) (string, error) {
-	if s.recorder != nil {
-		return "", fmt.Errorf("recording already running")
+	if s.screenRecorder != nil {
+		return "", fmt.Errorf("screen recording already running")
 	}
 
 	// Resolve devices
@@ -217,6 +226,7 @@ func (s *RecordingService) StartScreenRecording(
 		Speaker:   speaker,
 		AudioMode: mode,
 		Screen:    sc,
+		FFmpegLog: s.ffmpegLog,
 		File: &FileSink{
 			Dir: outputDir,
 		},
@@ -231,8 +241,8 @@ func (s *RecordingService) StartScreenRecording(
 		return "", err
 	}
 
-	s.recorder = r
-	
+	s.screenRecorder = r
+
 	// Let's assume there's one file.
 	if len(r.files) > 0 {
 		return r.files[0], nil
@@ -242,17 +252,17 @@ func (s *RecordingService) StartScreenRecording(
 }
 
 func (s *RecordingService) StopScreenRecording() {
-	if s.recorder == nil {
+	if s.screenRecorder == nil {
 		return
 	}
-	_, _ = s.recorder.Stop()
-	s.recorder = nil
+	_, _ = s.screenRecorder.Stop()
+	s.screenRecorder = nil
 }
 
 func (s *RecordingService) Stop() {
-	if s.recorder == nil {
+	if s.audioRecorder == nil {
 		return
 	}
-	_, _ = s.recorder.Stop()
-	s.recorder = nil
+	_, _ = s.audioRecorder.Stop()
+	s.audioRecorder = nil
 }
