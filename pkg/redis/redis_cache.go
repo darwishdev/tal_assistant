@@ -338,6 +338,7 @@ func (c *RedisCacheClient) SaveTranscribedQuestion(
 }
 
 // SaveAnswer stores the candidate's answer for a question.
+// If the question already has an answer, the new signal is appended to it.
 func (c *RedisCacheClient) SaveAnswer(
 	ctx context.Context,
 	interviewID string,
@@ -352,7 +353,11 @@ func (c *RedisCacheClient) SaveAnswer(
 	if node == nil {
 		return fmt.Errorf("question %s not found in summary for interview %s", questionID, interviewID)
 	}
-	node.Answer = answer
+	if node.Answer != "" {
+		node.Answer = node.Answer + " " + answer
+	} else {
+		node.Answer = answer
+	}
 	return c.saveSummary(ctx, summary)
 }
 
