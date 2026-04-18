@@ -732,16 +732,6 @@ function renderActiveSession(timerDeferred = false) {
                         <div id="current-q-text" class="current-q-text">Waiting for session to start…</div>
                     </div>
 
-                    <!-- Latest Judgment Card -->
-                    <div id="judgment-card" class="judgment-card" style="display:none">
-                        <div class="judgment-header">
-                            <span class="judgment-label">Latest Judgment</span>
-                            <span id="judgment-score" class="judgment-score"></span>
-                        </div>
-                        <div id="judgment-verdict" class="judgment-verdict"></div>
-                        <div id="judgment-details" class="judgment-details"></div>
-                    </div>
-
                     <!-- NQI suggestion stream -->
                     <div id="nqi-messages"></div>
                 </div>
