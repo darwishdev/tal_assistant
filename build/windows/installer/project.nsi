@@ -33,6 +33,7 @@ Unicode true
 ## Include the wails tools
 ####
 !include "wails_tools.nsh"
+!include "LogicLib.nsh"
 
 # The version information for this two must consist of 4 parts
 VIProductVersion "${INFO_PRODUCTVERSION}.0"
@@ -104,22 +105,23 @@ Section
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
 
-    ; --- Memurai (Redis-compatible) installation ---
+    ; --- Memurai (Redis-compatible) installation via MSI ---
     SetOutPath "$INSTDIR\redis"
-    File "..\..\bin\Memurai\memurai.exe"
-    File "..\..\bin\Memurai\memurai-services.dll"
-    File "..\..\bin\Memurai\memurai.conf"
-    File "..\..\bin\Memurai\libcrypto-3-x64.dll"
-    File "..\..\bin\Memurai\libssl-3-x64.dll"
-    File "..\..\bin\Memurai\memurai-cli.exe"
+    File "..\..\bin\Memurai\Memurai-for-Redis-v8.2-RC1.msi"
 
-    ; Register Memurai as a Windows service
-    ExecWait '"$INSTDIR\redis\memurai.exe" --service-install --service-name Memurai --loglevel notice --logfile "$INSTDIR\redis\memurai-log.txt"'
+    ; Install Memurai silently using msiexec with detailed logging
+    DetailPrint "Installing Memurai service..."
+    ExecWait 'msiexec /i "$INSTDIR\redis\Memurai-for-Redis-v8.2-RC1.msi" /qn /norestart /l*v "$INSTDIR\memurai_install.log"' $1
+    DetailPrint "Memurai MSI install: exit code $1"
+    
+    ${If} $1 <> 0
+        MessageBox MB_OK|MB_ICONEXCLAMATION "Memurai installation failed (exit code $1). Check $INSTDIR\memurai_install.log for details."
+    ${Else}
+        DetailPrint "Memurai installed successfully"
+    ${EndIf}
 
-    ; Start the service
-    ExecWait 'net start Memurai'
     SetOutPath $INSTDIR
-    ; ------------------------------------------------
+    ; --------------------------------------------------------
 
     !insertmacro wails.writeUninstaller
 SectionEnd
@@ -128,10 +130,11 @@ Section "uninstall"
     !insertmacro wails.setShellContext
 
     ; --- Memurai (Redis-compatible) uninstall ---
-    ExecWait 'net stop Memurai'
-    IfFileExists "$INSTDIR\redis\memurai.exe" 0 +2
-        ExecWait '"$INSTDIR\redis\memurai.exe" --service-uninstall --service-name Memurai'
+    ; Uninstall Memurai MSI silently
+    IfFileExists "$INSTDIR\redis\Memurai-for-Redis-v8.2-RC1.msi" 0 +2
+        ExecWait 'msiexec /x "$INSTDIR\redis\Memurai-for-Redis-v8.2-RC1.msi" /qn /norestart'
     RMDir /r "$INSTDIR\redis"
+    Delete "$INSTDIR\memurai_install.log"
     ; ---------------------------------------------
 
     ; --- Remove bundled ffmpeg ---

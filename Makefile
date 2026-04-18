@@ -76,7 +76,8 @@ prepare-build: prepare-ffmpeg prepare-credentials prepare-config
 build-release: prepare-build
 	wails build -clean -ldflags "-w -s"
 
-build-windows: wails build --platform windows/amd64 --nsis
+build-windows: prepare-build
+	wails build --platform windows/amd64 --nsis
 
 build-windows-release: prepare-build
 	wails build -platform windows/amd64 -clean -ldflags "-w -s"
