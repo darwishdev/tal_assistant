@@ -94,7 +94,7 @@ type RedisCacheClient struct {
 	client *redis.Client
 }
 
-func NewRedisCacheClient(redisUrl string) *RedisCacheClient {
+func NewRedisCacheClient(redisUrl string, redisPassword string) *RedisCacheClient {
 	if redisUrl == "" {
 		addr := os.Getenv("REDIS_URL")
 		if addr == "" {
@@ -103,7 +103,7 @@ func NewRedisCacheClient(redisUrl string) *RedisCacheClient {
 		redisUrl = addr
 	}
 	return &RedisCacheClient{
-		client: redis.NewClient(&redis.Options{Addr: redisUrl}),
+		client: redis.NewClient(&redis.Options{Addr: redisUrl, Password: redisPassword}),
 	}
 }
 

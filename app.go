@@ -182,13 +182,13 @@ func (a *App) startup(ctx context.Context) {
 		log.Println("warning: WORKABLE_SUBDOMAIN or WORKABLE_TOKEN not set, workable client unavailable")
 	}
 	fmt.Println("redis config is here ", cfg.RedisAddress)
-	publisher := redispkg.NewRedisPublisher(cfg.RedisAddress)
+	publisher := redispkg.NewRedisPublisher(cfg.RedisQueueAddress)
 	a.redisPublisher = publisher
 
-	redisCache := redispkg.NewRedisCacheClient(cfg.RedisAddress)
+	redisCache := redispkg.NewRedisCacheClient(cfg.RedisAddress, cfg.RedisPassword)
 	a.redisCache = redisCache
 
-	subscriber := redispkg.NewOrchestrationSubscriber(cfg.RedisAddress, adkService, publisher, redisCache, a.emit)
+	subscriber := redispkg.NewOrchestrationSubscriber(cfg.RedisQueueAddress, adkService, publisher, redisCache, a.emit)
 	a.redisSubscriber = subscriber
 
 	redisCtx, redisCancel := context.WithCancel(context.Background())

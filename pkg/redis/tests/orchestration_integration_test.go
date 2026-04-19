@@ -155,7 +155,7 @@ func TestOrchestratorIntegration(t *testing.T) {
 		t.Fatalf("NewADKService: %v", err)
 	}
 
-	cache := redispkg.NewRedisCacheClient("")
+	cache := redispkg.NewRedisCacheClient("", "")
 	publisher := redispkg.NewRedisPublisher("")
 	emitToUi := func(event string, data interface{}) {
 		fmt.Printf("emitted to ui event :%s , data : %v", event, data)
