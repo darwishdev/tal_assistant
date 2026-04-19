@@ -856,12 +856,10 @@ func (a *App) WorkableEventFind(eventID string) (*workableclient.EventFindResult
 	// Cache in memory
 	a.cachedEventFindResult = result
 	// Cache in Redis
-	if data, err := json.Marshal(result); err == nil {
-		if err := a.redisCache.SaveEventData(a.ctx, eventID, data); err != nil {
-			log.Printf("[workable] WARNING: failed to cache EventFindResult in Redis for eventID=%s: %v", eventID, err)
-		} else {
-			log.Printf("[workable] cached EventFindResult in Redis for eventID=%s", eventID)
-		}
+	if err := a.redisCache.SaveEventData(a.ctx, eventID, result); err != nil {
+		log.Printf("[workable] WARNING: failed to cache EventFindResult in Redis for eventID=%s: %v", eventID, err)
+	} else {
+		log.Printf("[workable] cached EventFindResult in Redis for eventID=%s", eventID)
 	}
 	return result, nil
 }
@@ -925,15 +923,10 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 	if a.cachedEventFindResult != nil && a.cachedEventFindResult.Event != nil && a.cachedEventFindResult.Event.ID == eventID {
 		log.Printf("[qbgen] using in-memory cached EventFindResult for eventID=%s", eventID)
 		result = a.cachedEventFindResult
-	} else if redisData, err := a.redisCache.FindEventData(a.ctx, eventID); err == nil {
+	} else if cached, err := a.redisCache.FindEventData(a.ctx, eventID); err == nil {
 		log.Printf("[qbgen] using Redis cached EventFindResult for eventID=%s", eventID)
-		var cached workableclient.EventFindResult
-		if jsonErr := json.Unmarshal(redisData, &cached); jsonErr == nil {
-			result = &cached
-			a.cachedEventFindResult = result
-		} else {
-			log.Printf("[qbgen] WARNING: failed to unmarshal Redis event data: %v — fetching fresh", jsonErr)
-		}
+		result = cached
+		a.cachedEventFindResult = result
 	}
 	if result == nil {
 		log.Printf("[qbgen] fetching EventFindResult from API for eventID=%s", eventID)
@@ -946,8 +939,8 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 		result = fetchedResult
 		a.cachedEventFindResult = result
 		// Persist to Redis for future calls
-		if data, marshalErr := json.Marshal(result); marshalErr == nil {
-			_ = a.redisCache.SaveEventData(a.ctx, eventID, data)
+		if saveErr := a.redisCache.SaveEventData(a.ctx, eventID, result); saveErr != nil {
+			log.Printf("[qbgen] WARNING: failed to save event data to Redis: %v", saveErr)
 		}
 	}
 
@@ -1031,11 +1024,7 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 // GetQuestionBank returns the question bank stored in Redis for the given eventID,
 // as a stable ordered slice (sorted by Order field). Returns nil if no bank exists yet.
 func (a *App) GetQuestionBank(eventID string) ([]adkutils.QuestionBankQuestion, error) {
-	bank, err := a.redisCache.FindQuestionBank(a.ctx, eventID)
-	if err != nil {
-		return nil, err
-	}
-	return sortedQuestions(bank), nil
+	return a.redisCache.FindQuestionBank(a.ctx, eventID)
 }
 
 // ATSInterviewFind returns full detail for a single interview by name.
@@ -1084,15 +1073,10 @@ func (a *App) BeginSession(eventID string) string {
 	if a.cachedEventFindResult != nil && a.cachedEventFindResult.Event != nil && a.cachedEventFindResult.Event.ID == eventID {
 		log.Printf("[session] using in-memory cached event data — eventID=%s", eventID)
 		eventData = a.cachedEventFindResult
-	} else if redisData, err := a.redisCache.FindEventData(a.ctx, eventID); err == nil && len(redisData) > 0 {
+	} else if cached, err := a.redisCache.FindEventData(a.ctx, eventID); err == nil {
 		log.Printf("[session] using Redis cached event data — eventID=%s", eventID)
-		var cached workableclient.EventFindResult
-		if jsonErr := json.Unmarshal(redisData, &cached); jsonErr == nil {
-			eventData = &cached
-			a.cachedEventFindResult = eventData
-		} else {
-			log.Printf("[session] WARNING: unmarshal Redis event data failed: %v — fetching fresh", jsonErr)
-		}
+		eventData = cached
+		a.cachedEventFindResult = eventData
 	}
 	if eventData == nil {
 		if a.workableClient == nil {
@@ -1105,17 +1089,16 @@ func (a *App) BeginSession(eventID string) string {
 		}
 		eventData = fetched
 		a.cachedEventFindResult = eventData
-		if data, marshalErr := json.Marshal(eventData); marshalErr == nil {
-			_ = a.redisCache.SaveEventData(a.ctx, eventID, data)
+		if saveErr := a.redisCache.SaveEventData(a.ctx, eventID, eventData); saveErr != nil {
+			log.Printf("[session] WARNING: failed to save event data to Redis: %v", saveErr)
 		}
 	}
 
 	// 2. Load question bank from Redis (must already be generated via GenerateQuestionBank)
-	questionBankMap, err := a.redisCache.FindQuestionBank(a.ctx, eventID)
-	if err != nil || len(questionBankMap) == 0 {
+	questions, err := a.redisCache.FindQuestionBank(a.ctx, eventID)
+	if err != nil || len(questions) == 0 {
 		return "error: no question bank found — please generate one before starting the session"
 	}
-	questions := sortedQuestions(questionBankMap)
 	log.Printf("[session] loaded %d questions from Redis — eventID=%s", len(questions), eventID)
 
 	// 3. Determine userID from candidate

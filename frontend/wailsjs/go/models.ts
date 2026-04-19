@@ -32,6 +32,7 @@ export namespace adkutils {
 	    id: string;
 	    order: number;
 	    category: string;
+	    question_type: string;
 	    difficulty: string;
 	    estimated_time_minutes: number;
 	    evaluation_criteria: EvaluationCriteria[];
@@ -49,6 +50,7 @@ export namespace adkutils {
 	        this.id = source["id"];
 	        this.order = source["order"];
 	        this.category = source["category"];
+	        this.question_type = source["question_type"];
 	        this.difficulty = source["difficulty"];
 	        this.estimated_time_minutes = source["estimated_time_minutes"];
 	        this.evaluation_criteria = this.convertValues(source["evaluation_criteria"], EvaluationCriteria);

@@ -1,8 +1,8 @@
 package nextquestionextender
 
 const (
-	agentName        = "next_question_extender"
-	agentDescription = "converts a follow-up or change question text into a full QuestionBankQuestion struct"
+	agentName         = "next_question_extender"
+	agentDescription  = "converts a follow-up or change question text into a full QuestionBankQuestion struct"
 	agentInstructions = `You are a question builder for a live interview assistant.
 
 The full question bank for this session:
@@ -18,6 +18,7 @@ Rules:
 - "name": generate a unique ID in the format "TLQ<3-digit-number>" that does not clash with any name already in the question bank.
 - "question": use the provided question text exactly.
 - "category": inherit from the parent question when it is a follow-up; infer from context otherwise.
+- "question_type": classify as either "behavioral" or "technical" based on the question content; inherit from parent when it is a follow-up.
 - "difficulty": infer from the question complexity and parent context.
 - "doctype": always "Question Bank Question".
 - "docstatus": always 0.

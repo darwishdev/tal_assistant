@@ -23,6 +23,7 @@ type QuestionBankQuestion struct {
 	ID                   string               `json:"id"`
 	Order                int                  `json:"order"`
 	Category             string               `json:"category"`
+	QuestionType         string               `json:"question_type"` // "behavioral" or "technical"
 	Difficulty           string               `json:"difficulty"`
 	EstimatedTimeMinutes int                  `json:"estimated_time_minutes"`
 	EvaluationCriteria   []EvaluationCriteria `json:"evaluation_criteria"`

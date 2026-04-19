@@ -303,10 +303,7 @@ async function loadInterviewList() {
                         <td><span class="status-badge status-interview">${esc(i.type ?? '')}</span></td>
                         <td class="cell-actions">
                             <button class="action-btn" onclick="goToFind('${esc(i.id)}')">View</button>
-                            ${hasQBank
-                                ? `<button class="action-btn action-btn--primary" onclick="goToSession('${esc(i.id)}')">▶ Start</button>`
-                                : `<button class="action-btn" style="opacity:0.45;cursor:not-allowed" title="Generate a question bank first" disabled>▶ Start</button>`
-                            }
+                            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(i.id)}', ${hasQBank})">▶ Start</button>
                         </td>
                     </tr>`
                     }).join('')}
@@ -323,9 +320,77 @@ function goToFind(name) {
     navigate('interview_find')
 }
 
-function goToSession(name) {
+async function goToSession(name, hasQBank = true) {
     _selectedInterview = name
-    navigate('start_session')
+    
+    // If no question bank exists, generate it first
+    if (!hasQBank) {
+        const modal = document.createElement('div')
+        modal.id = 'qbank-gen-modal'
+        modal.style.cssText = `
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            padding: 20px;
+        `
+        modal.innerHTML = `
+            <div class="spinner" style="margin-bottom: 20px;"></div>
+            <h3 style="color: white; margin: 0 0 12px 0; font-size: 1.2rem;">Preparing Interview Session</h3>
+            <p style="color: #888; margin: 0; max-width: 500px; text-align: center; line-height: 1.6;">
+                This interview has no question bank yet. We're generating a tailored question bank based on the job requirements and candidate profile.
+            </p>
+            <p style="color: #666; margin: 8px 0 0 0; font-size: 0.9rem;">
+                This usually takes 30-60 seconds...
+            </p>
+        `
+        document.body.appendChild(modal)
+        
+        try {
+            const result = await window.go.main.App.GenerateQuestionBank(name, '')
+            modal.remove()
+            
+            if (result === 'ok') {
+                // Question bank generated successfully, proceed to session
+                navigate('start_session')
+            } else {
+                // Error generating question bank
+                const errorContext = {
+                    eventID: name,
+                    result,
+                    timestamp: new Date().toISOString(),
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform
+                }
+                logError('ERROR', 'goToSession', `Failed to generate question bank: ${result}`, errorContext)
+                showError(`Failed to generate question bank: ${result}`)
+                showErrorModal('Question Bank Generation Failed', result, errorContext)
+            }
+        } catch (err) {
+            modal.remove()
+            
+            const errorContext = {
+                eventID: name,
+                error: err?.message ?? String(err),
+                stack: err?.stack,
+                timestamp: new Date().toISOString(),
+                userAgent: navigator.userAgent,
+                platform: navigator.platform
+            }
+            
+            const errorMessage = `Question bank generation error: ${err?.message ?? String(err)}`
+            logError('ERROR', 'goToSession', errorMessage, errorContext)
+            showError(errorMessage)
+            showErrorModal('Question Bank Generation Error', errorMessage, errorContext)
+        }
+    } else {
+        // Question bank already exists, proceed directly
+        navigate('start_session')
+    }
 }
 
 function renderInterviewFind() {
@@ -346,21 +411,88 @@ function renderInterviewFind() {
     `
     loadInterviewFind()
 }
+    function showRegeneratePrompt(eventID) {
+    // Remove any existing modal
+    const existing = document.getElementById('regenerate-prompt-modal')
+    if (existing) existing.remove()
+    
+    const modal = document.createElement('div')
+    modal.id = 'regenerate-prompt-modal'
+    modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        padding: 20px;
+    `
+    
+    modal.innerHTML = `
+        <div style="
+            background: var(--bg, #1a1a1a);
+            border: 1px solid var(--border, #333);
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 560px;
+            width: 100%;
+        ">
+            <h3 style="color: white; margin: 0 0 12px 0; font-size: 1.2rem;">Regenerate Question Bank</h3>
+            <p style="color: #888; margin: 0 0 16px 0; line-height: 1.6;">
+                Optionally add custom instructions for the AI — e.g. <em>"focus on system design"</em> or <em>"include more behavioral questions"</em>.
+            </p>
+            <textarea
+                id="regenerate-user-prompt"
+                class="field-input"
+                rows="4"
+                placeholder="Optional: instruct the agent — e.g. focus on backend architecture, skip easy questions, include leadership scenarios…"
+                style="width: 100%; resize: vertical; margin-bottom: 16px; font-size: 0.85rem; line-height: 1.5; background: var(--bg2, #222); border: 1px solid var(--border, #333); color: white; padding: 8px; border-radius: 4px;"
+            ></textarea>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button
+                    class="ghost-btn"
+                    onclick="document.getElementById('regenerate-prompt-modal').remove()"
+                    style="padding: 8px 16px;"
+                >Cancel</button>
+                <button
+                    class="action-btn action-btn--primary"
+                    onclick="generateQuestionBank('${esc(eventID)}', document.getElementById('regenerate-user-prompt')?.value?.trim() ?? ''); document.getElementById('regenerate-prompt-modal').remove()"
+                    style="padding: 8px 16px;"
+                >⚡ Regenerate</button>
+            </div>
+        </div>
+    `
+    
+    document.body.appendChild(modal)
+    
+    // Close on background click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove()
+    })
+    
+    // Focus textarea
+    setTimeout(() => document.getElementById('regenerate-user-prompt')?.focus(), 100)
+}
+
 
 function _renderFindActions(interviewId, hasQBank) {
     const actions = document.getElementById('find-actions')
     if (!actions) return
     if (hasQBank) {
         actions.innerHTML = `
-            <button class="action-btn" id="gen-qbank-btn" onclick="generateQuestionBank('${esc(interviewId)}')">↺ Regenerate Bank</button>
-            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(interviewId)}')">▶ Start Session</button>
+            <button class="action-btn" id="gen-qbank-btn" onclick="showRegeneratePrompt('${esc(interviewId)}')">↺ Regenerate Bank</button>
+            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(interviewId)}', true)">▶ Start Session</button>
         `
     } else {
         actions.innerHTML = `
-            <button class="action-btn action-btn--primary" id="gen-qbank-btn" onclick="generateQuestionBank('${esc(interviewId)}')">⚡ Generate Question Bank</button>
+            <button class="action-btn" id="gen-qbank-btn" onclick="generateQuestionBank('${esc(interviewId)}', '')">⚡ Generate Question Bank</button>
+            <button class="action-btn action-btn--primary" onclick="goToSession('${esc(interviewId)}', false)">▶ Start Session</button>
         `
     }
 }
+
+
 
 async function loadInterviewFind() {
     const body = document.getElementById('interview-find-body')
@@ -1659,7 +1791,7 @@ function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(
 function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
 Object.assign(window, {
     submitLogin, navigate, logout, loadInterviewList,
-    goToFind, goToSession, switchTab,
+    goToFind, goToSession, switchTab,showRegeneratePrompt,
     startSessionAndRecord, toggleRec, toggleHistoryMode, toggleSummaryView,
     inferNextQuestion, manualEvaluateAnswer, loadAudioDevices,
     generateQuestionBank, loadQuestionBankTab,

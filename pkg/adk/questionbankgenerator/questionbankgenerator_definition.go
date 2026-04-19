@@ -1,8 +1,8 @@
 package questionbankgenerator
 
 const (
-	agentName        = "question_bank_generator"
-	agentDescription = "generates a full interview question bank from job and candidate data"
+	agentName         = "question_bank_generator"
+	agentDescription  = "generates a full interview question bank from job and candidate data"
 	agentInstructions = `You are an expert technical interviewer. You will receive complete job and candidate data as a JSON object in the following format:
 
 {event_data_json}
@@ -32,6 +32,7 @@ Rules for each question:
 - "id": unique ID in the format "GEN<3-digit-number>" (e.g. GEN001, GEN002 …).
 - "question": a clear, specific, open-ended interview question tailored to the candidate and role. Must follow the QUESTION FORMAT RULES above.
 - "category": one of Technical, Behavioral, Situational, Culture Fit, Domain Knowledge, or Resume Validation.
+- "question_type": classify each question as either "behavioral" or "technical" based on the primary focus of the question.
 - "difficulty": Easy, Medium, or Hard — calibrated to the role seniority.
 - "estimated_time_minutes": realistic time to answer (1–15).
 - "evaluation_criteria": 1–3 objects with must_mention keywords and bonus_points the ideal answer should cover.

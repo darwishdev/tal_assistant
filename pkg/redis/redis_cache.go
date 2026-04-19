@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"tal_assistant/pkg/adkutils"
+	"tal_assistant/pkg/workableclient"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -17,6 +19,7 @@ const (
 	summaryKeyPrefix         = "summary:"
 	agentResponsesKeyPrefix  = "agent_responses:"
 	eventDataKeyPrefix       = "event:"
+	sessionKeyPrefix         = "session:"
 )
 
 // QuestionAnswer is one node in the interview summary tree.
@@ -54,18 +57,34 @@ type AgentResponse struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
+// Session holds all data related to a single interview session.
+type Session struct {
+	SessionID        string                          `json:"session_id"`
+	EventID          string                          `json:"event_id"`
+	EventData        *workableclient.EventFindResult `json:"event_data,omitempty"`
+	QuestionBank     []adkutils.QuestionBankQuestion `json:"question_bank,omitempty"`
+	InterviewSummary *InterviewSummary               `json:"interview_summary,omitempty"`
+	Transcription    string                          `json:"transcription,omitempty"`
+	Status           string                          `json:"status"` // "initialized", "in_progress", "completed", "cancelled"
+	RecordingPath    string                          `json:"recording_path,omitempty"`
+	StartedAt        int64                           `json:"started_at,omitempty"`   // Unix timestamp in milliseconds
+	CompletedAt      int64                           `json:"completed_at,omitempty"` // Unix timestamp in milliseconds
+	CreatedAt        int64                           `json:"created_at"`             // Unix timestamp in milliseconds
+	UpdatedAt        int64                           `json:"updated_at"`             // Unix timestamp in milliseconds
+}
+
 // ─────────────────────────────────────────────
 // Interface
 // ─────────────────────────────────────────────
 
 type RedisCacheInterface interface {
-	// Event data — raw JSON of the Workable EventFindResult
-	SaveEventData(ctx context.Context, eventID string, data []byte) error
-	FindEventData(ctx context.Context, eventID string) ([]byte, error)
+	// Event data — Workable EventFindResult
+	SaveEventData(ctx context.Context, eventID string, event *workableclient.EventFindResult) error
+	FindEventData(ctx context.Context, eventID string) (*workableclient.EventFindResult, error)
 
 	// Question bank — lookup map for agents
 	SaveQuestionBank(ctx context.Context, interviewID string, questions []adkutils.QuestionBankQuestion) error
-	FindQuestionBank(ctx context.Context, interviewID string) (map[string]adkutils.QuestionBankQuestion, error)
+	FindQuestionBank(ctx context.Context, interviewID string) ([]adkutils.QuestionBankQuestion, error)
 	FindQuestionByID(ctx context.Context, interviewID string, questionID string) (*adkutils.QuestionBankQuestion, error)
 
 	// Current question pointer
@@ -84,6 +103,10 @@ type RedisCacheInterface interface {
 	// Agent responses
 	SaveAgentResponse(ctx context.Context, interviewID string, response AgentResponse) error
 	FindAgentResponses(ctx context.Context, interviewID string) ([]AgentResponse, error)
+
+	// Session management
+	SaveSession(ctx context.Context, session *Session) error
+	FindSession(ctx context.Context, sessionID string) (*Session, error)
 }
 
 // ─────────────────────────────────────────────
@@ -108,11 +131,20 @@ func NewRedisCacheClient(redisUrl string, redisPassword string) *RedisCacheClien
 }
 
 // ── Event data ─────────────────────────────────
-// Stores the raw JSON of the Workable EventFindResult so it can be re-used
+// Stores the Workable EventFindResult so it can be re-used
 // without an additional API call.
 //   Key → event:<eventID>
 
-func (c *RedisCacheClient) SaveEventData(ctx context.Context, eventID string, data []byte) error {
+func (c *RedisCacheClient) SaveEventData(ctx context.Context, eventID string, event *workableclient.EventFindResult) error {
+	if event == nil {
+		return fmt.Errorf("event data cannot be nil")
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal event data for %s: %w", eventID, err)
+	}
+
 	key := eventDataKeyPrefix + eventID
 	if err := c.client.Set(ctx, key, data, 0).Err(); err != nil {
 		return fmt.Errorf("save event data for %s: %w", eventID, err)
@@ -120,13 +152,19 @@ func (c *RedisCacheClient) SaveEventData(ctx context.Context, eventID string, da
 	return nil
 }
 
-func (c *RedisCacheClient) FindEventData(ctx context.Context, eventID string) ([]byte, error) {
+func (c *RedisCacheClient) FindEventData(ctx context.Context, eventID string) (*workableclient.EventFindResult, error) {
 	key := eventDataKeyPrefix + eventID
 	raw, err := c.client.Get(ctx, key).Result()
 	if err != nil {
 		return nil, fmt.Errorf("find event data for %s: %w", eventID, err)
 	}
-	return []byte(raw), nil
+
+	var event workableclient.EventFindResult
+	if err := json.Unmarshal([]byte(raw), &event); err != nil {
+		return nil, fmt.Errorf("unmarshal event data for %s: %w", eventID, err)
+	}
+
+	return &event, nil
 }
 
 // ── Question bank ──────────────────────────────
@@ -169,24 +207,38 @@ func (c *RedisCacheClient) SaveQuestionBank(
 	return nil
 }
 
-// FindQuestionBank returns every question in the bank as a map keyed by question ID.
+// FindQuestionBank returns every question in the bank as a sorted array ordered by the Order field.
 func (c *RedisCacheClient) FindQuestionBank(
 	ctx context.Context,
 	interviewID string,
-) (map[string]adkutils.QuestionBankQuestion, error) {
+) ([]adkutils.QuestionBankQuestion, error) {
 	key := questionBankKeyPrefix + interviewID
 	raw, err := c.client.HGetAll(ctx, key).Result()
 	if err != nil {
 		return nil, fmt.Errorf("find question bank for interview %s: %w", interviewID, err)
 	}
-	result := make(map[string]adkutils.QuestionBankQuestion, len(raw))
+	result := make([]adkutils.QuestionBankQuestion, 0, len(raw))
 	for questionID, data := range raw {
 		var q adkutils.QuestionBankQuestion
 		if err := json.Unmarshal([]byte(data), &q); err != nil {
 			return nil, fmt.Errorf("unmarshal question %s: %w", questionID, err)
 		}
-		result[questionID] = q
+		result = append(result, q)
 	}
+	// Sort by Order field (0 values go last), then by ID as tiebreaker
+	sort.Slice(result, func(i, j int) bool {
+		oi, oj := result[i].Order, result[j].Order
+		if oi != oj {
+			if oi == 0 {
+				return false
+			}
+			if oj == 0 {
+				return true
+			}
+			return oi < oj
+		}
+		return result[i].ID < result[j].ID
+	})
 	return result, nil
 }
 
@@ -477,6 +529,56 @@ func (c *RedisCacheClient) FindAgentResponses(
 		responses = append(responses, r)
 	}
 	return responses, nil
+}
+
+// ── Session management ─────────────────────────
+// Stores complete session data including event, questions, summary, transcription.
+//   Key → session:<sessionID>
+
+func (c *RedisCacheClient) SaveSession(ctx context.Context, session *Session) error {
+	if session == nil {
+		return fmt.Errorf("session cannot be nil")
+	}
+	if session.SessionID == "" {
+		return fmt.Errorf("session ID cannot be empty")
+	}
+
+	// Update timestamp
+	now := time.Now().UnixMilli()
+	if session.CreatedAt == 0 {
+		session.CreatedAt = now
+	}
+	session.UpdatedAt = now
+
+	data, err := json.Marshal(session)
+	if err != nil {
+		return fmt.Errorf("marshal session %s: %w", session.SessionID, err)
+	}
+
+	key := sessionKeyPrefix + session.SessionID
+	if err := c.client.Set(ctx, key, data, 0).Err(); err != nil {
+		return fmt.Errorf("save session %s: %w", session.SessionID, err)
+	}
+	return nil
+}
+
+func (c *RedisCacheClient) FindSession(ctx context.Context, sessionID string) (*Session, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("session ID cannot be empty")
+	}
+
+	key := sessionKeyPrefix + sessionID
+	raw, err := c.client.Get(ctx, key).Result()
+	if err != nil {
+		return nil, fmt.Errorf("find session %s: %w", sessionID, err)
+	}
+
+	var session Session
+	if err := json.Unmarshal([]byte(raw), &session); err != nil {
+		return nil, fmt.Errorf("unmarshal session %s: %w", sessionID, err)
+	}
+
+	return &session, nil
 }
 
 func (c *RedisCacheClient) Close() error {
