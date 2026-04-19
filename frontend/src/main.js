@@ -13,8 +13,19 @@ let summaryViewMode = false  // toggle between conversation and summary in histo
 let transcriptHistory = []
 let currentPartial = { label: '', text: '' }
 let currentSummary = null  // cache the latest summary
+let errorLog = []  // persistent error log for debugging
 
 const NQI_CONTEXT_LINES = 10
+
+// Load error log from localStorage on startup
+try {
+    const savedLog = localStorage.getItem('tal_error_log')
+    if (savedLog) {
+        errorLog = JSON.parse(savedLog)
+    }
+} catch (e) {
+    console.warn('Failed to load error log from localStorage:', e)
+}
 
 // ── Wails event listeners ──────────────────────────────────────────────────
 window.runtime.EventsOn('status', (s) => {
@@ -223,6 +234,7 @@ function renderInterviewList() {
             </div>
             <div class="page-header-right">
                 <button class="icon-btn" onclick="loadInterviewList()" title="Refresh">↺</button>
+                ${errorLog.length > 0 ? `<button class="icon-btn" onclick="downloadErrorLog()" title="Download Error Log (${errorLog.length} entries)" style="color:#ff6b6b">📋</button>` : ''}
                 <button class="ghost-btn" onclick="logout()">← Sign Out</button>
             </div>
         </div>
@@ -545,6 +557,10 @@ function switchTab(name, btn) {
 async function generateQuestionBank(eventID, userPrompt = '') {
     const body = document.getElementById('interview-find-body')
     const actions = document.getElementById('find-actions')
+    const timestamp = new Date().toISOString()
+
+    // Log the start of generation
+    logError('INFO', 'GenerateQuestionBank', `Starting generation for eventID: ${eventID}, userPrompt: "${userPrompt}"`, { eventID, userPrompt })
 
     if (actions) {
         actions.innerHTML = `<span class="table-loading" style="font-size:0.85em">⏳ Generating question bank…</span>`
@@ -571,18 +587,46 @@ async function generateQuestionBank(eventID, userPrompt = '') {
     try {
         const result = await window.go.main.App.GenerateQuestionBank(eventID, userPrompt)
         removeOverlay()
+        
         if (result === 'ok') {
+            logError('INFO', 'GenerateQuestionBank', `Success: Question bank generated for eventID: ${eventID}`, { eventID, result })
             _renderFindActions(eventID, true)
             const qTab = document.querySelector('.find-tab:nth-child(3)')
             if (qTab) { switchTab('questions', qTab); loadQuestionBankTab(eventID) }
         } else {
+            // Result is an error string from Go
+            const errorContext = {
+                eventID,
+                userPrompt,
+                result,
+                timestamp,
+                userAgent: navigator.userAgent,
+                platform: navigator.platform
+            }
+            logError('ERROR', 'GenerateQuestionBank', `Go backend error: ${result}`, errorContext)
             _renderFindActions(eventID, false)
             showError(result)
+            showErrorModal('Question Bank Generation Failed', result, errorContext)
         }
     } catch (err) {
         removeOverlay()
         _renderFindActions(eventID, false)
-        showError('GenerateQuestionBank: ' + (err?.message ?? String(err)))
+        
+        // Comprehensive error logging
+        const errorContext = {
+            eventID,
+            userPrompt,
+            error: err?.message ?? String(err),
+            stack: err?.stack,
+            timestamp,
+            userAgent: navigator.userAgent,
+            platform: navigator.platform
+        }
+        
+        const errorMessage = `GenerateQuestionBank exception: ${err?.message ?? String(err)}`
+        logError('ERROR', 'GenerateQuestionBank', errorMessage, errorContext)
+        showError(errorMessage)
+        showErrorModal('Question Bank Generation Error', errorMessage, errorContext)
     }
 }
 
@@ -1289,6 +1333,160 @@ function showError(msg) {
     if (lines.length > 20) lines[0].remove()
 }
 
+// ── Error logging system ───────────────────────────────────────────────────
+function logError(level, context, message, details = {}) {
+    const logEntry = {
+        timestamp: new Date().toISOString(),
+        level,
+        context,
+        message,
+        details
+    }
+    errorLog.push(logEntry)
+    
+    // Keep only last 100 entries
+    if (errorLog.length > 100) {
+        errorLog.shift()
+    }
+    
+    // Also log to console for immediate visibility during development
+    console[level.toLowerCase()] || console.log(`[${level}] ${context}: ${message}`, details)
+    
+    // Save to localStorage for persistence across sessions
+    try {
+        localStorage.setItem('tal_error_log', JSON.stringify(errorLog))
+    } catch (e) {
+        console.warn('Failed to save error log to localStorage:', e)
+    }
+}
+
+function downloadErrorLog() {
+    const logText = errorLog.map(entry => 
+        `[${entry.timestamp}] [${entry.level}] ${entry.context}: ${entry.message}\n` +
+        `Details: ${JSON.stringify(entry.details, null, 2)}\n` +
+        `${'='.repeat(80)}\n`
+    ).join('\n')
+    
+    const blob = new Blob([logText], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `tal-assistant-error-log-${new Date().toISOString().replace(/:/g, '-')}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+}
+
+function showErrorModal(title, message, context = {}) {
+    // Remove any existing error modal
+    const existing = document.getElementById('error-modal')
+    if (existing) existing.remove()
+    
+    const modal = document.createElement('div')
+    modal.id = 'error-modal'
+    modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        padding: 20px;
+    `
+    
+    const contextStr = JSON.stringify(context, null, 2)
+    
+    modal.innerHTML = `
+        <div style="
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            max-width: 700px;
+            width: 100%;
+            max-height: 80vh;
+            overflow: auto;
+            padding: 24px;
+        ">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 16px;">
+                <h2 style="margin: 0; color: #ff6b6b; font-size: 1.25rem;">⚠ ${esc(title)}</h2>
+                <button onclick="document.getElementById('error-modal').remove()" style="
+                    background: transparent;
+                    border: none;
+                    color: #888;
+                    font-size: 1.5rem;
+                    cursor: pointer;
+                    padding: 0;
+                    width: 30px;
+                    height: 30px;
+                    line-height: 30px;
+                    text-align: center;
+                ">&times;</button>
+            </div>
+            
+            <div style="
+                background: #0d0d0d;
+                border: 1px solid #2a2a2a;
+                border-radius: 4px;
+                padding: 12px;
+                margin-bottom: 16px;
+                color: #ff6b6b;
+                font-family: monospace;
+                font-size: 0.9rem;
+                white-space: pre-wrap;
+                word-break: break-word;
+            ">${esc(message)}</div>
+            
+            ${contextStr !== '{}' ? `
+                <details style="margin-bottom: 16px;">
+                    <summary style="cursor: pointer; color: #888; margin-bottom: 8px;">Show Error Context</summary>
+                    <pre style="
+                        background: #0d0d0d;
+                        border: 1px solid #2a2a2a;
+                        border-radius: 4px;
+                        padding: 12px;
+                        overflow: auto;
+                        font-size: 0.85rem;
+                        color: #ccc;
+                        margin: 0;
+                    ">${esc(contextStr)}</pre>
+                </details>
+            ` : ''}
+            
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button onclick="downloadErrorLog()" style="
+                    background: #2a2a2a;
+                    border: 1px solid #444;
+                    color: #fff;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                ">📥 Download Full Log</button>
+                <button onclick="navigator.clipboard.writeText(${JSON.stringify(message + '\n\n' + contextStr)})" style="
+                    background: #2a2a2a;
+                    border: 1px solid #444;
+                    color: #fff;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                ">📋 Copy Error</button>
+                <button onclick="document.getElementById('error-modal').remove()" style="
+                    background: #ff6b6b;
+                    border: none;
+                    color: #fff;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                ">Close</button>
+            </div>
+        </div>
+    `
+    
+    document.body.appendChild(modal)
+}
+
 function appendUserBubble(prompt) {
     const messages = document.getElementById('nqi-messages')
     if (!messages) return
@@ -1465,4 +1663,5 @@ Object.assign(window, {
     startSessionAndRecord, toggleRec, toggleHistoryMode, toggleSummaryView,
     inferNextQuestion, manualEvaluateAnswer, loadAudioDevices,
     generateQuestionBank, loadQuestionBankTab,
+    downloadErrorLog, logError, showErrorModal,
 })

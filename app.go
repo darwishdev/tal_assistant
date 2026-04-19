@@ -498,14 +498,14 @@ func (a *App) StopRecording() {
 			// Add comment to Workable
 			if a.cachedEventFindResult != nil && a.cachedEventFindResult.Candidate != nil {
 				candidateID := a.cachedEventFindResult.Candidate.ID
-				
+
 				// Ensure we have a member ID to post the comment as
 				var memberID string
 				if a.cachedEventFindResult.Event != nil && len(a.cachedEventFindResult.Event.Members) > 0 {
 					// Use the first member (usually the interviewer)
 					memberID = a.cachedEventFindResult.Event.Members[0].ID
 				}
-				
+
 				if candidateID != "" {
 					var folderURL string
 					if uploadRes.SessionFolderURL != "" {
@@ -513,9 +513,9 @@ func (a *App) StopRecording() {
 					} else {
 						folderURL = fmt.Sprintf("https://drive.google.com/drive/folders/%s", uploadRes.TalFolderID)
 					}
-					
+
 					commentBody := fmt.Sprintf("Tal Assistant recording and transcription saved to Google Drive: %s", folderURL)
-					
+
 					log.Printf("[workable] adding comment for candidate %s", candidateID)
 					_, err := a.WorkableCandidateCommentCreate(candidateID, memberID, commentBody)
 					if err != nil {
@@ -657,7 +657,7 @@ func (a *App) runSpeechStream(audio io.Reader, channels int) {
 	if closer, ok := audio.(io.ReadCloser); ok {
 		defer closer.Close()
 	}
-	
+
 	ctx, cancel := context.WithCancel(a.ctx)
 	defer cancel()
 
@@ -877,13 +877,47 @@ func (a *App) HasQuestionBank(eventID string) bool {
 	return len(bank) > 0
 }
 
+// logErrorToFile writes an error message to a persistent error log file on the Desktop
+func logErrorToFile(context, message string, err error) {
+	homeDir, _ := os.UserHomeDir()
+	logDir := filepath.Join(homeDir, "Desktop")
+	if _, statErr := os.Stat(logDir); os.IsNotExist(statErr) {
+		logDir = filepath.Join(homeDir, "OneDrive", "Desktop")
+		if _, statErr := os.Stat(logDir); os.IsNotExist(statErr) {
+			logDir = homeDir
+		}
+	}
+
+	errorLogPath := filepath.Join(logDir, "tal-assistant-errors.log")
+	f, openErr := os.OpenFile(errorLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if openErr != nil {
+		log.Printf("[logErrorToFile] WARNING: could not open error log file: %v", openErr)
+		return
+	}
+	defer f.Close()
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	var logLine string
+	if err != nil {
+		logLine = fmt.Sprintf("[%s] [ERROR] %s: %s | Error: %v\n", timestamp, context, message, err)
+	} else {
+		logLine = fmt.Sprintf("[%s] [ERROR] %s: %s\n", timestamp, context, message)
+	}
+
+	if _, writeErr := f.WriteString(logLine); writeErr != nil {
+		log.Printf("[logErrorToFile] WARNING: could not write to error log: %v", writeErr)
+	}
+}
+
 // GenerateQuestionBank uses the cached EventFindResult (or fetches it if not cached),
 // runs the question-bank-generator ADK agent with the full JSON data,
 // and persists the result in Redis keyed by eventID. Returns "ok" on success or an error string.
 // userPrompt is an optional recruiter instruction forwarded to the agent (may be empty).
 func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 	if a.workableClient == nil {
-		return "error: workable client not configured"
+		errMsg := "error: workable client not configured"
+		logErrorToFile("GenerateQuestionBank", "Workable client not initialized", nil)
+		return errMsg
 	}
 
 	// Use cached result: check memory first, then Redis, then fetch from API
@@ -905,7 +939,9 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 		log.Printf("[qbgen] fetching EventFindResult from API for eventID=%s", eventID)
 		fetchedResult, err := a.workableClient.EventFind(eventID)
 		if err != nil {
-			return fmt.Sprintf("error: fetch event %s: %v", eventID, err)
+			errMsg := fmt.Sprintf("error: fetch event %s: %v", eventID, err)
+			logErrorToFile("GenerateQuestionBank", fmt.Sprintf("Failed to fetch event data for eventID=%s", eventID), err)
+			return errMsg
 		}
 		result = fetchedResult
 		a.cachedEventFindResult = result
@@ -918,7 +954,9 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 	// Marshal the full EventFindResult to JSON
 	eventJSON, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return fmt.Sprintf("error: marshal event data: %v", err)
+		errMsg := fmt.Sprintf("error: marshal event data: %v", err)
+		logErrorToFile("GenerateQuestionBank", fmt.Sprintf("Failed to marshal event data for eventID=%s", eventID), err)
+		return errMsg
 	}
 
 	log.Printf("[qbgen] Marshaled event data (%d bytes)", len(eventJSON))
@@ -945,7 +983,9 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 	}
 
 	if err := a.adkService.SessionUpsert(a.ctx, sessionID, userID, state); err != nil {
-		return fmt.Sprintf("error: create session: %v", err)
+		errMsg := fmt.Sprintf("error: create session: %v", err)
+		logErrorToFile("GenerateQuestionBank", fmt.Sprintf("Failed to create ADK session for eventID=%s, sessionID=%s", eventID, sessionID), err)
+		return errMsg
 	}
 
 	log.Printf("[qbgen] calling QuestionBankGeneratorRun — sessionID=%s userID=%s", sessionID, userID)
@@ -958,7 +998,9 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 	})
 	if err != nil {
 		log.Printf("[qbgen] ERROR: agent run failed: %v", err)
-		return fmt.Sprintf("error: run agent: %v", err)
+		errMsg := fmt.Sprintf("error: run agent: %v", err)
+		logErrorToFile("GenerateQuestionBank", fmt.Sprintf("ADK agent run failed for eventID=%s, sessionID=%s", eventID, sessionID), err)
+		return errMsg
 	}
 
 	log.Printf("[qbgen] agent returned %d questions", len(questions))
@@ -977,7 +1019,9 @@ func (a *App) GenerateQuestionBank(eventID string, userPrompt string) string {
 
 	if err := a.redisCache.SaveQuestionBank(a.ctx, eventID, questions); err != nil {
 		log.Printf("[qbgen] ERROR: failed to save to redis: %v", err)
-		return fmt.Sprintf("error: save to redis: %v", err)
+		errMsg := fmt.Sprintf("error: save to redis: %v", err)
+		logErrorToFile("GenerateQuestionBank", fmt.Sprintf("Failed to save question bank to Redis for eventID=%s", eventID), err)
+		return errMsg
 	}
 
 	log.Printf("[qbgen] SUCCESS: saved %d questions to redis for event=%s", len(questions), eventID)
