@@ -9,7 +9,10 @@ type ListSourcesResonse struct {
 	AudioDevices []string `json:"audio_devices"`
 }
 type SessionUseCaseInterface interface {
-	ListAudioDevices() (*ListSourcesResonse, error)
+	SessionStart(eventID string) string
+	SessionFind(sessionID string) string
+	SessionStop(sessionID string) string
+	DeviceList() (*ListSourcesResonse, error)
 	CheckGoogleDriveAuthorization() (*atsclient.DriveAuthStatus, error)
 }
 type SessionUseCase struct {
