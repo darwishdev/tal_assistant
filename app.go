@@ -182,13 +182,13 @@ func (a *App) startup(ctx context.Context) {
 		log.Println("warning: WORKABLE_SUBDOMAIN or WORKABLE_TOKEN not set, workable client unavailable")
 	}
 	fmt.Println("redis config is here ", cfg.RedisAddress)
-	publisher := redispkg.NewRedisPublisher(cfg.RedisAddress)
+	publisher := redispkg.NewRedisPublisher(cfg.RedisQueueAddress)
 	a.redisPublisher = publisher
 
-	redisCache := redispkg.NewRedisCacheClient(cfg.RedisAddress)
+	redisCache := redispkg.NewRedisCacheClient(cfg.RedisAddress, cfg.RedisPassword)
 	a.redisCache = redisCache
 
-	subscriber := redispkg.NewOrchestrationSubscriber(cfg.RedisAddress, adkService, publisher, redisCache, a.emit)
+	subscriber := redispkg.NewOrchestrationSubscriber(cfg.RedisQueueAddress, adkService, publisher, redisCache, a.emit)
 	a.redisSubscriber = subscriber
 
 	redisCtx, redisCancel := context.WithCancel(context.Background())
@@ -498,14 +498,14 @@ func (a *App) StopRecording() {
 			// Add comment to Workable
 			if a.cachedEventFindResult != nil && a.cachedEventFindResult.Candidate != nil {
 				candidateID := a.cachedEventFindResult.Candidate.ID
-				
+
 				// Ensure we have a member ID to post the comment as
 				var memberID string
 				if a.cachedEventFindResult.Event != nil && len(a.cachedEventFindResult.Event.Members) > 0 {
 					// Use the first member (usually the interviewer)
 					memberID = a.cachedEventFindResult.Event.Members[0].ID
 				}
-				
+
 				if candidateID != "" {
 					var folderURL string
 					if uploadRes.SessionFolderURL != "" {
@@ -513,9 +513,9 @@ func (a *App) StopRecording() {
 					} else {
 						folderURL = fmt.Sprintf("https://drive.google.com/drive/folders/%s", uploadRes.TalFolderID)
 					}
-					
+
 					commentBody := fmt.Sprintf("Tal Assistant recording and transcription saved to Google Drive: %s", folderURL)
-					
+
 					log.Printf("[workable] adding comment for candidate %s", candidateID)
 					_, err := a.WorkableCandidateCommentCreate(candidateID, memberID, commentBody)
 					if err != nil {
@@ -657,7 +657,7 @@ func (a *App) runSpeechStream(audio io.Reader, channels int) {
 	if closer, ok := audio.(io.ReadCloser); ok {
 		defer closer.Close()
 	}
-	
+
 	ctx, cancel := context.WithCancel(a.ctx)
 	defer cancel()
 

@@ -27,6 +27,13 @@ type Config struct {
 	RedisPort     string `mapstructure:"REDIS_PORT"`
 	RedisDB       int    `mapstructure:"REDIS_DB"`
 	RedisPassword string `mapstructure:"REDIS_PASSWORD"`
+	RedisAddress  string `mapstructure:"REDIS_ADDRESS"`
+
+	RedisQueuqHost     string `mapstructure:"REDIS_QUEUE_HOST"`
+	RedisQueuqPort     string `mapstructure:"REDIS_QUEUE_PORT"`
+	RedisQueuqDB       int    `mapstructure:"REDIS_QUEUE_DB"`
+	RedisQueuqPassword string `mapstructure:"REDIS_QUEUE_PASSWORD"`
+	RedisQueueAddress  string `mapstructure:"REDIS_QUEUE_ADDRESS"`
 
 	SignalingAgentURL    string `mapstructure:"SIGNALING_AGENT_URL"`
 	NextQuestionAgentURL string `mapstructure:"NEXT_QUESTION_AGENT_URL"`
@@ -35,8 +42,6 @@ type Config struct {
 
 	WorkableSubdomain string `mapstructure:"WORKABLE_SUBDOMAIN"`
 	WorkableToken     string `mapstructure:"WORKABLE_TOKEN"`
-
-	RedisAddress string `mapstructure:"REDIS_ADDRESS"`
 }
 
 var AppConfig Config
