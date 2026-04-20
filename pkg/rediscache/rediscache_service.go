@@ -21,15 +21,30 @@ type RedisCacheInterface interface {
 	SessionFind(ctx context.Context, sessionID string) (*Session, error)
 
 	//question bank
-	QuestionBankCreate(ctx context.Context, interviewID string, questions []adkutils.QuestionBankQuestion) error
-	QuestionBankFind(ctx context.Context, interviewID string) ([]adkutils.QuestionBankQuestion, error)
-	QuestionBankeQuestionFind(ctx context.Context, interviewID string, questionID string) (*adkutils.QuestionBankQuestion, error)
+	QuestionBankCreate(
+		ctx context.Context,
+		interviewID string,
+		questions []adkutils.QuestionBankQuestion,
+		embedFunc func(text string) ([]float32, error),
+	) (string, error)
+	QuestionBankFind(ctx context.Context, eventID string, qbankID string) ([]adkutils.QuestionBankQuestion, error)
+	QuestionBankSearch(
+		ctx context.Context,
+		interviewID, qbankID, query string,
+		threshold float64,
+		embedFunc func(text string) ([]float32, error),
+	) ([]adkutils.QuestionBankQuestion, error)
+	QuestionBankQuestionFind(
+		ctx context.Context,
+		eventID string,
+		qbankID string,
+		questionID string,
+	) (*adkutils.QuestionBankQuestion, error)
 	// session summary
-	SessionSummaryCreate(ctx context.Context, sessionID string, summary *SessionSummary) error
-	SessionSummaryAppendTranscribedQuestion(ctx context.Context, sessionID string, questionID string, transcribedQuestion string) error
-	SessionSummaryAppendAnswer(ctx context.Context, sessionID string, questionID string, answer string) error
+	// SessionSummaryCreate(ctx context.Context, sessionID string, summary *SessionSummary) error
+	SessionQuestionCreate(ctx context.Context, sessionID string, questionID string, transcribedQuestion string) error
+	SessionAnswerCreate(ctx context.Context, sessionID string, questionID string, answer string) error
 	SessionAnswerJudgmentCreate(ctx context.Context, sessionID string, questionID string, judgment *Judgment) error
-	SessionSummaryAppendQuestion(ctx context.Context, sessionID string, question *adkutils.QuestionBankQuestion) error
 	SessionSummaryFind(ctx context.Context, sessionID string) (*SessionSummaryFindResponse, error)
 
 	// agent response
@@ -44,7 +59,7 @@ type RedisCacheClient struct {
 	client *redis.Client
 }
 
-func NewRedisCacheClient(redisUrl string, redisPassword string) *RedisCacheClient {
+func NewRedisCacheClient(redisUrl string, redisPassword string) RedisCacheInterface {
 	return &RedisCacheClient{
 		client: redis.NewClient(&redis.Options{
 			Addr:     redisUrl,

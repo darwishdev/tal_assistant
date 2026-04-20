@@ -2,7 +2,6 @@ package rediscache
 
 import (
 	"tal_assistant/pkg/adkutils"
-	"tal_assistant/pkg/workableclient"
 )
 
 const (
@@ -36,10 +35,10 @@ type Judgment struct {
 }
 
 // InterviewSummary is the full ordered Q&A history stored for an interview.
-type SessionSummary struct {
-	InterviewID string           `json:"interview_id"`
-	Questions   []QuestionAnswer `json:"questions"`
-}
+// type SessionSummary struct {
+// 	EventID   string           `json:"event_id"`
+// 	Questions []QuestionAnswer `json:"questions"`
+// }
 
 // AgentResponse records one input/output pair for any agent in the pipeline.
 type AgentResponse struct {
@@ -51,18 +50,15 @@ type AgentResponse struct {
 
 // Session holds all data related to a single interview session.
 type Session struct {
-	SessionID      string                          `json:"session_id"`
-	EventID        string                          `json:"event_id"`
-	EventData      *workableclient.EventFindResult `json:"event_data,omitempty"`
-	QuestionBank   []adkutils.QuestionBankQuestion `json:"question_bank,omitempty"`
-	SessionSummary *SessionSummary                 `json:"interview_summary,omitempty"`
-	Transcription  string                          `json:"transcription,omitempty"`
-	Status         string                          `json:"status"` // "initialized", "in_progress", "completed", "cancelled"
-	RecordingPath  string                          `json:"recording_path,omitempty"`
-	StartedAt      int64                           `json:"started_at,omitempty"`   // Unix timestamp in milliseconds
-	CompletedAt    int64                           `json:"completed_at,omitempty"` // Unix timestamp in milliseconds
-	CreatedAt      int64                           `json:"created_at"`             // Unix timestamp in milliseconds
-	UpdatedAt      int64                           `json:"updated_at"`             // Unix timestamp in milliseconds
+	SessionID     string `json:"session_id"`
+	QBankID       string `json:"q_bank_id"`
+	EventID       string `json:"event_id"`
+	Status        string `json:"status"` // "initialized", "in_progress", "completed", "cancelled"
+	RecordingPath string `json:"recording_path,omitempty"`
+	StartedAt     int64  `json:"started_at,omitempty"`   // Unix timestamp in milliseconds
+	CompletedAt   int64  `json:"completed_at,omitempty"` // Unix timestamp in milliseconds
+	CreatedAt     int64  `json:"created_at"`             // Unix timestamp in milliseconds
+	UpdatedAt     int64  `json:"updated_at"`             // Unix timestamp in milliseconds
 }
 
 type Event struct {
@@ -72,10 +68,8 @@ type Event struct {
 }
 
 type SessionSummaryFindResponse struct {
-	InterviewID       string                          `json:"interview_id"`
-	Questions         []adkutils.QuestionBankQuestion `json:"questions"`
-	AppendedQuestions []adkutils.QuestionBankQuestion `json:"appended_questions"`
-	Answers           map[string]string               `json:"answers"` // questionID → answer
-	Judgments         []Judgment                      `json:"judgments"`
-	DriveFolderURL    string                          `json:"drive_folder_url,omitempty"`
+	EventID   string                          `json:"event_id"`
+	Questions []adkutils.QuestionBankQuestion `json:"questions"`
+	Answers   map[string]string               `json:"answers"` // questionID → answer
+	Judgments []Judgment                      `json:"judgments"`
 }
