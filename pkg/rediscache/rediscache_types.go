@@ -65,7 +65,7 @@ type Session struct {
 	UpdatedAt      int64                           `json:"updated_at"`             // Unix timestamp in milliseconds
 }
 
-type DBEvent struct {
+type Event struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	Description string `json:"description"`

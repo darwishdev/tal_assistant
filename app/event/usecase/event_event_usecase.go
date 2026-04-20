@@ -39,9 +39,6 @@ func (u *EventUseCase) EventFind(ctx context.Context, eventID string) (*dto.Even
 	if err != nil {
 		fmt.Printf("failed to fetch event from cache: %v", err)
 	}
-	// response := &dto.EventFindResponse{
-	// 	QuestionBank: questionBankQuestions,
-	// }
 	if err == nil && cachedEvent != nil {
 		fmt.Printf("cache hit for eventID: %s\n", eventID)
 		if len(cachedEvent) > 0 {
