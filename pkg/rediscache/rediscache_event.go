@@ -4,15 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"tal_assistant/pkg/workableclient"
 )
 
-// ── Event data ─────────────────────────────────
-// Stores the Workable EventFindResult so it can be re-used
-// without an additional API call.
-//   Key → event:<eventID>
-
-func (c *RedisCacheClient) SaveEventData(ctx context.Context, eventID string, event *workableclient.EventFindResult) error {
+func (c *RedisCacheClient) EventCreate(ctx context.Context, eventID string, event *Event) error {
 	if event == nil {
 		return fmt.Errorf("event data cannot be nil")
 	}
@@ -29,14 +23,14 @@ func (c *RedisCacheClient) SaveEventData(ctx context.Context, eventID string, ev
 	return nil
 }
 
-func (c *RedisCacheClient) FindEventData(ctx context.Context, eventID string) (*workableclient.EventFindResult, error) {
+func (c *RedisCacheClient) EventFind(ctx context.Context, eventID string) (*Event, error) {
 	key := eventDataKeyPrefix + eventID
 	raw, err := c.client.Get(ctx, key).Result()
 	if err != nil {
 		return nil, fmt.Errorf("find event data for %s: %w", eventID, err)
 	}
 
-	var event workableclient.EventFindResult
+	var event Event
 	if err := json.Unmarshal([]byte(raw), &event); err != nil {
 		return nil, fmt.Errorf("unmarshal event data for %s: %w", eventID, err)
 	}
