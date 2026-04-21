@@ -204,15 +204,35 @@ func (s *RecordingService) StartScreenRecording(
 			break
 		}
 	}
-	
+
 	var sc *Screen
 	if screen != nil {
-		sc = &Screen{
-			Name:   screen.ID,
-			X:      int32(screen.OffsetX),
-			Y:      int32(screen.OffsetY),
-			Width:  int32(screen.Width),
-			Height: int32(screen.Height),
+		if screen.Name == "window" || screen.ID == "window" {
+			fmt.Printf("chosen capture mode: application window\n")
+			// Locate the app window by process handle using GetWindowRect.
+			// This is reliable even for DWM-composited transparent/frameless windows
+			// where gdigrab "title=" capture silently produces an empty file.
+			bounds, err := FindWindowBounds()
+			if err != nil {
+				fmt.Printf("[StartScreenRecording] FindWindowBounds error: %v — falling back to full desktop\n", err)
+				sc = nil
+			} else if bounds.Width <= 0 || bounds.Height <= 0 {
+				fmt.Printf("[StartScreenRecording] FindWindowBounds returned invalid size W=%d H=%d — falling back to full desktop\n", bounds.Width, bounds.Height)
+				sc = nil
+			} else {
+				fmt.Printf("[StartScreenRecording] window capture: X=%d Y=%d W=%d H=%d\n", bounds.X, bounds.Y, bounds.Width, bounds.Height)
+				sc = bounds
+			}
+		} else {
+				fmt.Printf("chosen capture mode: entire screen %s\n", screen.Name)
+			// Capture screen region
+			sc = &Screen{
+				Name:   screen.ID,
+				X:      int32(screen.OffsetX),
+				Y:      int32(screen.OffsetY),
+				Width:  int32(screen.Width),
+				Height: int32(screen.Height),
+			}
 		}
 	}
 

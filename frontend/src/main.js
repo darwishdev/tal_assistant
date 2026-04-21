@@ -88,6 +88,11 @@ window.runtime.EventsOn('judgment_received', (data) => {
     _onJudgmentReceived(data)
 })
 
+// Background pipeline task progress events
+window.runtime.EventsOn('pipeline_task', (task) => {
+    _onPipelineTask(task)
+})
+
 // Interview summary updated after each judgment is saved
 window.runtime.EventsOn('interview_summary_updated', (summary) => {
     _onInterviewSummaryUpdated(summary)
@@ -842,7 +847,7 @@ function renderStartSession() {
             </div>
 
             <div class="device-section">
-                <h4>🖥 Screen <span class="device-section-hint">optional — leave blank to record full desktop</span></h4>
+                <h4>🖥 Screen Recording <span class="device-section-hint">records video of the selected display</span></h4>
                 <div id="screen-list" class="device-list">
                     <div class="loading">Loading screens…</div>
                 </div>
@@ -883,13 +888,22 @@ function renderActiveSession(timerDeferred = false) {
         <!-- ── Main body: transcript left, NQI right ── -->
         <div id="session-body">
 
-            <!-- Transcript -->
+            <!-- Transcript + pipeline activity (left column) -->
             <div id="tx-panel">
                 <div id="tx-area">
                     <div id="partial" class="line" style="display:none">
                         <span class="lbl mic" id="p-lbl">Mic</span>
                         <span class="tx partial" id="p-tx"></span>
                     </div>
+                </div>
+
+                <!-- Background pipeline activity log -->
+                <div id="activity-log" style="display:none">
+                    <div class="activity-header">
+                        <span class="activity-header-icon">⚙</span>
+                        <span class="activity-header-title">Background Tasks</span>
+                    </div>
+                    <div id="activity-items"></div>
                 </div>
             </div>
 
@@ -1043,6 +1057,86 @@ function _updateCurrentQuestion(text) {
         el.textContent = text
         el.classList.remove('current-q-text--changing')
     }, 180)
+}
+
+// ── Pipeline activity log ────────────────────────────────────────────────
+// Tracks active task DOM nodes by task ID so "done"/"error" can update them.
+const _activePipelineTasks = new Map()
+
+const _TASK_ICONS = {
+    mapper:  '⟳',
+    nqi:     '✦',
+    judging: '⚖',
+    nqe:     '✎',
+}
+const _TASK_FADE_MS = 4500
+
+function _onPipelineTask(task) {
+    const { id, stage, status, label, detail } = task
+    const container = document.getElementById('activity-items')
+    const logEl     = document.getElementById('activity-log')
+    if (!container || !logEl) return
+
+    const icon = _TASK_ICONS[stage] || '·'
+
+    if (status === 'running') {
+        // Show the log panel
+        logEl.style.display = 'flex'
+
+        const item = document.createElement('div')
+        item.className = 'activity-item activity-item--running'
+        item.dataset.taskId = id
+        item.innerHTML = `
+            <div class="activity-row">
+                <span class="activity-spinner"></span>
+                <span class="activity-stage-icon">${icon}</span>
+                <span class="activity-label">${esc(label)}</span>
+            </div>
+            <div class="activity-bar"><div class="activity-bar-fill"></div></div>
+        `
+        container.appendChild(item)
+        _activePipelineTasks.set(id, item)
+
+    } else if (status === 'done') {
+        const item = _activePipelineTasks.get(id)
+        if (!item) return
+        item.classList.remove('activity-item--running')
+        item.classList.add('activity-item--done')
+        const row = item.querySelector('.activity-row')
+        if (row) row.innerHTML = `
+            <span class="activity-check">✓</span>
+            <span class="activity-stage-icon">${icon}</span>
+            <span class="activity-label">${esc(label)}</span>
+            ${detail ? `<span class="activity-detail">${esc(detail)}</span>` : ''}
+        `
+        const fill = item.querySelector('.activity-bar-fill')
+        if (fill) fill.style.width = '100%'
+
+        // Auto-remove after a short delay
+        setTimeout(() => {
+            item.classList.add('activity-item--fading')
+            setTimeout(() => {
+                item.remove()
+                _activePipelineTasks.delete(id)
+                if (container.children.length === 0) logEl.style.display = 'none'
+            }, 400)
+        }, _TASK_FADE_MS)
+
+    } else if (status === 'error') {
+        const item = _activePipelineTasks.get(id)
+        if (!item) return
+        item.classList.remove('activity-item--running')
+        item.classList.add('activity-item--error')
+        const row = item.querySelector('.activity-row')
+        if (row) row.innerHTML = `
+            <span class="activity-error-icon">✗</span>
+            <span class="activity-stage-icon">${icon}</span>
+            <span class="activity-label">${esc(label)}</span>
+            ${detail ? `<span class="activity-detail activity-detail--error">${esc(detail)}</span>` : ''}
+        `
+        const fill = item.querySelector('.activity-bar-fill')
+        if (fill) { fill.style.background = 'var(--red)'; fill.style.width = '100%'; fill.style.transition = 'none' }
+    }
 }
 
 // ── Judgment display ──────────────────────────────────────────────────────
@@ -1641,6 +1735,8 @@ function loadAudioDevices() {
         .then(devices => {
             // ── Microphones ────────────────────────────────────────────────
             const micList = document.getElementById('mic-list')
+            console.log(devices);
+            
             micList.innerHTML = ''
             if (devices.Mics?.length) {
                 devices.Mics.forEach((mic, idx) => {
@@ -1735,10 +1831,29 @@ function loadAudioDevices() {
             // ── Screens ────────────────────────────────────────────────────
             const screenList = document.getElementById('screen-list')
             screenList.innerHTML = ''
+            
+            // Option 1: Application Window (default and recommended)
+            const appWindowLabel = document.createElement('label')
+            appWindowLabel.className = 'device-option screen-option'
+            appWindowLabel.innerHTML = `
+                <input type="radio" name="screen" value="window" checked>
+                <div class="screen-preview">
+                    <div class="screen-thumb-placeholder">🪟</div>
+                    <div class="screen-info">
+                        <span class="device-name">Application Window</span>
+                        <span class="screen-res">this app only</span>
+                    </div>
+                </div>
+            `
+            appWindowLabel.querySelector('input').addEventListener('change', () => onDeviceSelect('screen', 'window'))
+            screenList.appendChild(appWindowLabel)
+            onDeviceSelect('screen', 'window') // Auto-select application window
+            
+            // Option 2: Full desktop
             const noneLabel = document.createElement('label')
             noneLabel.className = 'device-option screen-option'
             noneLabel.innerHTML = `
-                <input type="radio" name="screen" value="" checked>
+                <input type="radio" name="screen" value="">
                 <div class="screen-preview">
                     <div class="screen-thumb-placeholder">🖥</div>
                     <div class="screen-info">

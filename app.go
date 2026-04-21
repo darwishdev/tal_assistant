@@ -408,14 +408,29 @@ func (a *App) StartRecording(micDevice, speakerDevice, screenDevice string) stri
 
 	var screen *recording.ScreenSource
 	if screenDevice != "" {
-		// find the matching ScreenSource from the device list
-		screens, err := a.ffmpegService.ScreenDeviceList(a.ctx)
-		if err == nil {
-			for i, s := range screens {
-				if s.ID == screenDevice || s.Name == screenDevice {
-					screen = &screens[i]
-					break
+		log.Printf("[recording] resolving screenDevice=%q", screenDevice)
+		if screenDevice == "window" {
+			// Synthetic entry — not in the monitor list. Pass it through so
+			// service.go triggers FindWindowBounds.
+			screen = &recording.ScreenSource{ID: "window", Name: "window"}
+			log.Printf("[recording] screenDevice=window — will use FindWindowBounds")
+		} else {
+			// find the matching ScreenSource from the device list
+			screens, err := a.ffmpegService.ScreenDeviceList(a.ctx)
+			if err == nil {
+				for i, s := range screens {
+					if s.ID == screenDevice || s.Name == screenDevice {
+						screen = &screens[i]
+						log.Printf("[recording] matched monitor: ID=%q Name=%q offset=(%d,%d) size=%dx%d",
+							screen.ID, screen.Name, screen.OffsetX, screen.OffsetY, screen.Width, screen.Height)
+						break
+					}
 				}
+			} else {
+				log.Printf("[recording] WARNING: ScreenDeviceList failed: %v", err)
+			}
+			if screen == nil {
+				log.Printf("[recording] WARNING: screenDevice=%q not found in monitor list — using full desktop", screenDevice)
 			}
 		}
 		// screen == nil here means "full desktop" — StartScreenRecording handles that

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -234,10 +235,10 @@ func (r *Recorder) Stop() (*Recording, error) {
 	r.mu.Unlock()
 
 	close(r.quit)
-	
+
 	// Close pipes and tell ffmpeg to stop so any blocked writes in capture goroutines are interrupted
 	r.stopFFmpeg()
-	
+
 	r.wg.Wait()
 
 	com.CoUninitialize()
@@ -695,17 +696,36 @@ func (r *Recorder) launchAudioFFmpeg(
 	args = append(args, "-y")
 
 	if screen != nil {
-		// Video input: gdigrab desktop (or a specific monitor region).
+		// Video input: gdigrab capturing either a specific window or desktop region.
 		args = append(args, "-f", "gdigrab",
 			"-framerate", fmt.Sprintf("%d", r.opts.Framerate))
-		if screen.Width > 0 && screen.Height > 0 {
-			args = append(args,
-				"-offset_x", fmt.Sprintf("%d", screen.X),
-				"-offset_y", fmt.Sprintf("%d", screen.Y),
-				"-video_size", fmt.Sprintf("%dx%d", screen.Width, screen.Height),
-			)
+
+		if screen.WindowTitle != "" {
+			// Capture specific window by title
+			args = append(args, "-i", fmt.Sprintf("title=%s", screen.WindowTitle))
+		} else {
+			// Capture desktop region.
+			// libx264 + yuv420p requires even width and height — round down.
+			w := screen.Width &^ 1
+			h := screen.Height &^ 1
+			if w <= 0 || h <= 0 {
+				fmt.Printf("[launchAudioFFmpeg] WARNING: screen region too small after rounding (%dx%d) — skipping video\n", w, h)
+				screen = nil
+			} else {
+				if w != screen.Width || h != screen.Height {
+					fmt.Printf("[launchAudioFFmpeg] rounded video_size from %dx%d to %dx%d (libx264 requires even dimensions)\n",
+						screen.Width, screen.Height, w, h)
+				}
+				if screen.Width > 0 && screen.Height > 0 {
+					args = append(args,
+						"-offset_x", fmt.Sprintf("%d", screen.X),
+						"-offset_y", fmt.Sprintf("%d", screen.Y),
+						"-video_size", fmt.Sprintf("%dx%d", w, h),
+					)
+				}
+				args = append(args, "-i", "desktop")
+			}
 		}
-		args = append(args, "-i", "desktop")
 	}
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -766,6 +786,7 @@ func (r *Recorder) launchAudioFFmpeg(
 	}
 
 	cmd := exec.Command(ffmpegExe(), args...)
+	fmt.Printf("[launchAudioFFmpeg] command: %s %s\n", ffmpegExe(), strings.Join(args, " "))
 	if r.opts.FFmpegLog != nil {
 		cmd.Stderr = r.opts.FFmpegLog
 	} else {

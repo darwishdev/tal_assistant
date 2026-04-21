@@ -10,6 +10,7 @@ import (
 	"tal_assistant/pkg/adk"
 	"tal_assistant/pkg/adk/nextquestionextender"
 	"tal_assistant/pkg/adkutils"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -43,6 +44,18 @@ func NewOrchestrationSubscriber(
 		emitToUi:  emitToUi,
 		cache:     cache,
 	}
+}
+
+// emitTask sends a pipeline_task event to the UI so it can show progress.
+// id uniquely identifies this task run; status is "running", "done", or "error".
+func (s *OrchestrationSubscriber) emitTask(id, stage, status, label, detail string) {
+	s.emitToUi("pipeline_task", map[string]interface{}{
+		"id":     id,
+		"stage":  stage,
+		"status": status,
+		"label":  label,
+		"detail": detail,
+	})
 }
 
 // Run blocks until ctx is cancelled. Call it in a goroutine.
@@ -159,6 +172,8 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 
 	// If no direct match found, call the mapper agent
 	if questionID == "" {
+		mapperTaskID := fmt.Sprintf("mapper-%d", time.Now().UnixMilli())
+		s.emitTask(mapperTaskID, "mapper", "running", "Mapping signal to question…", "")
 		var err error
 		questionID, err = s.adkSvc.SignalingAgentMapperRun(adkutils.AgentRunRequest{
 			Ctx:       ctx,
@@ -168,6 +183,7 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 		})
 		if err != nil {
 			log.Printf("[orchestrator] [%s] mapper run failed: %v", event.InterviewID, err)
+			s.emitTask(mapperTaskID, "mapper", "error", "Mapper failed", err.Error())
 			return
 		}
 		if err := s.cache.SaveAgentResponse(ctx, event.InterviewID, AgentResponse{
@@ -177,6 +193,7 @@ func (s *OrchestrationSubscriber) handleSignalDetected(ctx context.Context, even
 		}); err != nil {
 			log.Printf("[orchestrator] [%s] save mapper response failed: %v", event.InterviewID, err)
 		}
+		s.emitTask(mapperTaskID, "mapper", "done", "Signal mapped", "")
 	}
 
 	if questionID == "UNKNOWN" {
@@ -303,6 +320,9 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 	}
 	prompt := fmt.Sprintf("Candidate's Answer:\n%s", answerText)
 
+	nqiTaskID := fmt.Sprintf("nqi-%d", time.Now().UnixMilli())
+	s.emitTask(nqiTaskID, "nqi", "running", "Determining next question…", "")
+
 	var sb strings.Builder
 	for chunk, err := range s.adkSvc.NextQuestionIndicatorRun(adkutils.AgentRunRequest{
 		Ctx:       ctx,
@@ -312,10 +332,12 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 	}) {
 		if err != nil {
 			log.Printf("[orchestrator] [%s] NQI run failed: %v", event.InterviewID, err)
+			s.emitTask(nqiTaskID, "nqi", "error", "NQI failed", err.Error())
 			return
 		}
 		if chunk == "None" {
 			log.Printf("[orchestrator] [%s] NQI returned None — no action needed", event.InterviewID)
+			s.emitTask(nqiTaskID, "nqi", "done", "No follow-up needed", "")
 			return
 		}
 
@@ -332,6 +354,7 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		sb.WriteString(chunk)
 	}
 	indication := strings.TrimSpace(sb.String())
+	s.emitTask(nqiTaskID, "nqi", "done", "Next question determined", "")
 
 	if err := s.cache.SaveAgentResponse(ctx, event.InterviewID, AgentResponse{
 		Agent:  "next_question_indicator_agent",
@@ -343,6 +366,8 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 
 	// ── Judging Agent: Evaluate the Q&A pair ──────────────────────────────
 	// Send answer to Judging Agent and collect JSON judgment
+	judgingTaskID := fmt.Sprintf("judging-%d", time.Now().UnixMilli())
+	s.emitTask(judgingTaskID, "judging", "running", "Evaluating answer…", "")
 	judgingPrompt := fmt.Sprintf("A: %s", answerText)
 	var judgingSb strings.Builder
 	for chunk, err := range s.adkSvc.JudgingAgentRun(adkutils.AgentRunRequest{
@@ -353,6 +378,7 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 	}) {
 		if err != nil {
 			log.Printf("[orchestrator] [%s] judging agent run failed: %v", event.InterviewID, err)
+			s.emitTask(judgingTaskID, "judging", "error", "Evaluation failed", err.Error())
 			break
 		}
 		// Handle deduplication: ADK SDK sends incremental chunks then a final full chunk
@@ -369,6 +395,7 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 		var judgment Judgment
 		if err := json.Unmarshal([]byte(judgmentJSON), &judgment); err != nil {
 			log.Printf("[orchestrator] [%s] parse judging agent JSON failed: %v\nJSON: %s", event.InterviewID, err, judgmentJSON)
+			s.emitTask(judgingTaskID, "judging", "error", "Evaluation parse failed", "")
 		} else {
 			if err := s.cache.SaveJudgment(ctx, event.InterviewID, event.QuestionID, &judgment); err != nil {
 				log.Printf("[orchestrator] [%s] save judgment failed: %v", event.InterviewID, err)
@@ -379,6 +406,8 @@ func (s *OrchestrationSubscriber) handleSignalMapped(ctx context.Context, event 
 				}
 				log.Printf("[orchestrator] [%s] judgment saved — question=%s score=%d/%d %s verdict=%q",
 					event.InterviewID, event.QuestionID, judgment.Score, 100, passStatus, judgment.Verdict)
+				s.emitTask(judgingTaskID, "judging", "done", "Answer evaluated",
+					fmt.Sprintf("%d/100 · %s", judgment.Score, passStatus))
 
 				// Emit judgment to UI for real-time feedback
 				s.emitToUi("judgment_received", map[string]interface{}{
@@ -440,6 +469,9 @@ func (s *OrchestrationSubscriber) handleNextQuestionIndicated(ctx context.Contex
 		return
 	}
 
+	nqeTaskID := fmt.Sprintf("nqe-%d", time.Now().UnixMilli())
+	s.emitTask(nqeTaskID, "nqe", "running", "Generating follow-up question…", "")
+
 	question, err := s.adkSvc.NextQuestionExtenderRun(adkutils.AgentRunRequest{
 		Ctx:       ctx,
 		SessionID: event.ExtenderSessionID,
@@ -451,8 +483,11 @@ func (s *OrchestrationSubscriber) handleNextQuestionIndicated(ctx context.Contex
 	})
 	if err != nil {
 		log.Printf("[orchestrator] [%s] NQE run failed: %v", event.InterviewID, err)
+		s.emitTask(nqeTaskID, "nqe", "error", "Follow-up generation failed", err.Error())
 		return
 	}
+
+	s.emitTask(nqeTaskID, "nqe", "done", "Follow-up question ready", question.Question)
 
 	nqeOutput, _ := json.Marshal(question)
 	if err := s.cache.SaveAgentResponse(ctx, event.InterviewID, AgentResponse{

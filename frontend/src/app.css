@@ -814,6 +814,10 @@ html, body {
     gap: 2px;
 }
 
+.screen-info .device-name {
+    margin-left: 0;
+}
+
 .screen-res {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 10px;
@@ -827,9 +831,6 @@ html, body {
         display:flex;
         justify-content: center;
 
-    }
-    label:first-child{
-        display: none;
     }
 
 }
@@ -1630,6 +1631,157 @@ html, body {
     padding: 3px 8px;
     border-radius: 4px;
 }
+
+/* ── Background pipeline activity log ── */
+#activity-log {
+    flex-direction: column;
+    border-top: 1px solid var(--line);
+    max-height: 150px;
+    overflow-y: auto;
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.15);
+}
+
+#activity-log::-webkit-scrollbar { width: 2px; }
+#activity-log::-webkit-scrollbar-thumb { background: rgba(255,255,255,.06); border-radius: 2px; }
+
+.activity-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    flex-shrink: 0;
+}
+
+.activity-header-icon {
+    font-size: 10px;
+    color: rgba(255,255,255,.25);
+    animation: spin-slow 4s linear infinite;
+}
+
+@keyframes spin-slow {
+    to { transform: rotate(360deg); }
+}
+
+.activity-header-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: rgba(255,255,255,.25);
+}
+
+.activity-item {
+    padding: 5px 12px 6px;
+    border-bottom: 1px solid rgba(255,255,255,.025);
+    animation: lineIn .15s ease;
+}
+
+.activity-item--fading {
+    opacity: 0;
+    transition: opacity .4s ease;
+}
+
+.activity-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.activity-stage-icon {
+    font-size: 10px;
+    color: rgba(255,255,255,.3);
+    flex-shrink: 0;
+    width: 12px;
+    text-align: center;
+}
+
+.activity-label {
+    font-size: 11px;
+    color: rgba(255,255,255,.72);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.activity-detail {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: rgba(255,255,255,.35);
+    flex-shrink: 0;
+}
+
+.activity-detail--error {
+    color: var(--red);
+}
+
+/* Spinner for running tasks */
+.activity-spinner {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid rgba(128,0,128,.3);
+    border-top-color: rgba(180,60,180,.9);
+    border-radius: 50%;
+    animation: spin .65s linear infinite;
+    flex-shrink: 0;
+}
+
+/* Status icons */
+.activity-check {
+    color: #4ade80;
+    font-size: 11px;
+    flex-shrink: 0;
+    width: 10px;
+    text-align: center;
+}
+
+.activity-error-icon {
+    color: var(--red);
+    font-size: 11px;
+    flex-shrink: 0;
+    width: 10px;
+    text-align: center;
+}
+
+/* Progress bar */
+.activity-bar {
+    height: 2px;
+    background: rgba(255,255,255,.05);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.activity-item--running .activity-bar-fill {
+    height: 100%;
+    width: 35%;
+    background: rgba(160,60,200,.75);
+    border-radius: 2px;
+    animation: slide-progress 1.1s ease-in-out infinite;
+}
+
+.activity-item--done .activity-bar-fill {
+    height: 100%;
+    width: 100%;
+    background: rgba(74,222,128,.5);
+    border-radius: 2px;
+    transition: width .3s ease;
+}
+
+.activity-item--error .activity-bar-fill {
+    height: 100%;
+    background: rgba(239,68,68,.6);
+    border-radius: 2px;
+}
+
+@keyframes slide-progress {
+    0%   { transform: translateX(-180%); }
+    100% { transform: translateX(420%); }
+}
+
 
 .judgment-score--pass {
     background: rgba(74,222,128,0.15);
