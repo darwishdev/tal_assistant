@@ -16,6 +16,7 @@ import (
 	"tal_assistant/config"
 	"tal_assistant/pkg/adk"
 	"tal_assistant/pkg/adk/questionbankgenerator"
+	"tal_assistant/pkg/adk/summarizeragent"
 	"tal_assistant/pkg/adkutils"
 	"tal_assistant/pkg/atsclient"
 	"tal_assistant/pkg/recording"
@@ -1503,6 +1504,117 @@ func (a *App) ManualEvaluateAnswer() string {
 
 	log.Printf("[manual-eval] signal_mapped published — orchestration pipeline triggered")
 	return "ok"
+}
+
+// InterviewSummaryResult wraps the agent's summary report with the interviewID for the caller.
+type InterviewSummaryResult struct {
+	InterviewID string                               `json:"interview_id"`
+	Report      *summarizeragent.InterviewSummaryReport `json:"report"`
+}
+
+// GenerateInterviewSummary runs the summarizer agent post-interview and returns a
+// holistic assessment of the candidate. Call this after StopRecording.
+// If interviewID is empty, the current session's interviewID is used.
+func (a *App) GenerateInterviewSummary(interviewID string) (*InterviewSummaryResult, error) {
+	if interviewID == "" {
+		interviewID = a.interviewID
+	}
+	if interviewID == "" {
+		return nil, fmt.Errorf("no interview ID provided")
+	}
+
+	log.Printf("[summarizer] generating post-interview summary — interviewID=%s", interviewID)
+
+	// Load the full Q&A summary from Redis
+	summary, err := a.redisCache.FindInterviewSummary(a.ctx, interviewID)
+	if err != nil || summary == nil {
+		return nil, fmt.Errorf("failed to load interview summary: %w", err)
+	}
+	if len(summary.Questions) == 0 {
+		return nil, fmt.Errorf("no questions found in interview summary")
+	}
+
+	// Build a human-readable transcript for the agent
+	var tb strings.Builder
+	for i, qa := range summary.Questions {
+		tb.WriteString(fmt.Sprintf("--- Question %d ---\n", i+1))
+		tb.WriteString(fmt.Sprintf("Question: %s\n", qa.Question.Question))
+		if qa.Answer != "" {
+			tb.WriteString(fmt.Sprintf("Answer: %s\n", qa.Answer))
+		} else {
+			tb.WriteString("Answer: (no answer recorded)\n")
+		}
+		if j := qa.Judgment; j != nil {
+			pass := "No"
+			if j.Pass {
+				pass = "Yes"
+			}
+			tb.WriteString(fmt.Sprintf("Judgment: score=%d pass=%s verdict=%q\n", j.Score, pass, j.Verdict))
+			if len(j.Strengths) > 0 {
+				tb.WriteString(fmt.Sprintf("  Strengths: %s\n", strings.Join(j.Strengths, "; ")))
+			}
+			if len(j.Weaknesses) > 0 {
+				tb.WriteString(fmt.Sprintf("  Weaknesses: %s\n", strings.Join(j.Weaknesses, "; ")))
+			}
+			if len(j.MissingKeywords) > 0 {
+				tb.WriteString(fmt.Sprintf("  Missing keywords: %s\n", strings.Join(j.MissingKeywords, ", ")))
+			}
+		}
+		if qa.FollowupQuestion != nil {
+			fq := qa.FollowupQuestion
+			tb.WriteString(fmt.Sprintf("  Follow-up Q: %s\n", fq.Question.Question))
+			if fq.Answer != "" {
+				tb.WriteString(fmt.Sprintf("  Follow-up A: %s\n", fq.Answer))
+			}
+		}
+		tb.WriteString("\n")
+	}
+
+	// Build interview context from cached event data (best-effort)
+	var interviewContext string
+	if cached, err := a.redisCache.FindEventData(a.ctx, interviewID); err == nil && cached != nil {
+		var parts []string
+		if c := cached.Candidate; c != nil {
+			parts = append(parts, fmt.Sprintf("Candidate: %s", c.Name))
+		}
+		if j := cached.Job; j != nil {
+			parts = append(parts, fmt.Sprintf("Role: %s", j.Title))
+		}
+		interviewContext = strings.Join(parts, "\n")
+	}
+
+	// Create a one-shot ADK session for the summarizer agent
+	sessionID := fmt.Sprintf("summarizer_%s", interviewID)
+	userID := a.userID
+	if userID == "" {
+		userID = interviewID
+	}
+
+	agentState := a.adkService.NewSummarizerAgentState(summarizeragent.SummarizerAgentState{
+		InterviewContext: interviewContext,
+	})
+	if err := a.adkService.SessionUpsert(a.ctx, sessionID, userID, agentState); err != nil {
+		return nil, fmt.Errorf("failed to create summarizer session: %w", err)
+	}
+
+	report, err := a.adkService.SummarizerAgentRun(adkutils.AgentRunRequest{
+		Ctx:       a.ctx,
+		SessionID: sessionID,
+		UserID:    userID,
+		Prompt:    summarizeragent.SummarizerInput{Transcript: tb.String()},
+	})
+	if err != nil {
+		log.Printf("[summarizer] ERROR: agent run failed: %v", err)
+		return nil, fmt.Errorf("summarizer agent failed: %w", err)
+	}
+
+	log.Printf("[summarizer] complete — overall_score=%d recommendation=%q",
+		report.OverallScore, report.HireRecommendation)
+
+	return &InterviewSummaryResult{
+		InterviewID: interviewID,
+		Report:      report,
+	}, nil
 }
 
 // AppLoginResponse combines the ATS login response and the Workable member info
