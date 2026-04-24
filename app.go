@@ -1439,9 +1439,45 @@ func (a *App) ManualEvaluateAnswer() string {
 	}
 
 	if answerText == "" {
-		msg := "error: no answer found for current question"
-		log.Printf("[manual-eval] %s — questionID=%s", msg, currentQuestionID)
-		return msg
+		log.Printf("[manual-eval] no answer for questionID=%s — advancing to next question in bank", currentQuestionID)
+
+		// Load the full question bank (already sorted by Order)
+		questionBank, err := a.redisCache.FindQuestionBank(a.ctx, a.interviewID)
+		if err != nil || len(questionBank) == 0 {
+			msg := fmt.Sprintf("error: could not load question bank: %v", err)
+			log.Printf("[manual-eval] %s", msg)
+			return msg
+		}
+
+		// Find the index of the current question
+		currentIdx := -1
+		for i, q := range questionBank {
+			if q.ID == currentQuestionID {
+				currentIdx = i
+				break
+			}
+		}
+
+		if currentIdx == -1 || currentIdx+1 >= len(questionBank) {
+			msg := "error: no more questions in bank"
+			log.Printf("[manual-eval] %s — currentIdx=%d bankLen=%d", msg, currentIdx, len(questionBank))
+			return msg
+		}
+
+		nextQuestion := questionBank[currentIdx+1]
+
+		// Update the current question pointer
+		if err := a.redisCache.UpsertCurrentQuestionPointer(a.ctx, a.interviewID, nextQuestion.ID); err != nil {
+			msg := fmt.Sprintf("error: failed to update question pointer: %v", err)
+			log.Printf("[manual-eval] %s", msg)
+			return msg
+		}
+
+		// Emit the next question to the UI
+		a.emit("current_question", nextQuestion.Question)
+
+		log.Printf("[manual-eval] advanced to next question — questionID=%s question=%q", nextQuestion.ID, nextQuestion.Question)
+		return "ok"
 	}
 
 	log.Printf("[manual-eval] triggering evaluation — questionID=%s answerLen=%d", currentQuestionID, len(answerText))
